@@ -145,13 +145,17 @@ mypy apps/ packages/
 
 ## 5. File Organization Rules (Rule 11)
 
-### Classification (where files go)
+**Enforcement:** GitHub Actions (70-enforcement/17-file-organization.yml) - currently manual review
 
-- **Agent-created default:** `.context/temp/` (drafts, scratch, logs) — git-ignored
-- **Issue-related:** `.context/issues/{repo}-{issue}-{slug}__gh/` — git-ignored
-- **Sprint-related:** `.context/sprint/` — committed
-- **Project-related:** `.context/project/` — committed
-- **Generated reports:** `.context/reports/` — git-ignored
+### Classification: Committed vs. Git-Ignored
+
+| Category | Location | Committed? | What goes here |
+|----------|----------|------------|----------------|
+| **Temp (default for agent-created)** | `.context/temp/` | ❌ No (git-ignored) | Scratch work, one-offs, drafts, local logs |
+| **Issue workspaces** | `.context/issues/{repo}-{issue}-{slug}__gh/` | ❌ No (git-ignored) | PR bodies, issue snapshots, per-issue notes/drafts |
+| **Sprint** | `.context/sprint/` | ✅ Yes | Sprint plans, retros, sprint notes |
+| **Project** | `.context/project/` | ✅ Yes | Architecture, ADRs, meeting notes, runbooks |
+| **Reports** | `.context/reports/` | ❌ No (git-ignored) | Generated outputs (coverage, scans, metrics) |
 
 ### Required `.gitignore` entries
 
@@ -179,6 +183,16 @@ env/
 .vscode/
 .idea/
 ```
+
+### File Placement Rules
+
+**Tests:**
+- ✅ All tests in `tests/` directory
+- ❌ Tests outside `tests/`
+
+**Temp/Debug scripts:**
+- ✅ `.context/temp/debug_*.py`, `.context/issues/{...}__gh/check_*.py`
+- ❌ `debug_*.py`, `check_*.py`, `temp_*.py` in project root
 
 ---
 
@@ -262,10 +276,17 @@ You CAN:
 
 ## 9. Essential Workflows
 
+### Discovery Workflow (Agents)
+
+**Draft first:** put exploratory notes in `.context/temp/` (git-ignored).  
+**Promote later:** move stable, durable information into:
+- `.context/project/` (architecture, ADRs, meetings, runbooks)
+- `.context/sprint/` (sprint plans, retros)
+
 ### Starting Work on a Story
 
 1. Story must be labeled `state:ready`
-2. Create branch per Rule 07
+2. Create branch per Rule 07: `<type>/<issue-id>-<slug>`
 3. Implement acceptance criteria + tests
 4. Keep drafts in `.context/temp/` (promote durable notes to `.context/project/` or `.context/sprint/`)
 
@@ -278,12 +299,34 @@ You CAN:
 
 ---
 
-## 10. Discovery Workflow (Agents)
+## 10. Enforcement Status
 
-**Draft first:** put exploratory notes in `.context/temp/` (git-ignored).  
-**Promote later:** move stable, durable information into:
-- `.context/project/` (architecture, ADRs, meetings, runbooks)
-- `.context/sprint/` (sprint plans, retros)
+**Current Implementation:**
+- ✅ Branch protection: Active (requires 1 approval + CODEOWNER review)
+- ✅ Labels: Created (24 labels for state/type/priority/role)
+- ✅ CODEOWNERS: Active (@nsin08)
+- ⚠️ Workflows: Basic CI only (lint, tests, PR validation) - **framework workflows are reference implementations, need adaptation**
+
+**Framework Workflows (70-enforcement/ - 17 files documented, need implementation):**
+1. State Machine Enforcement
+2. Artifact Linking
+3. Approval Gates
+4. Audit Logger
+5. Security Gate
+6. PR Validation
+7. Issue Validation
+8. Branch Protection Validation
+9. Code Quality
+10. Release Automation
+11. Security Checks
+12. Epic/Story Tracking
+13. Definition of Ready
+14. Definition of Done
+15. Labeling Standard
+16. Commit Linting
+17. File Organization (Rule 11)
+
+**Note:** Framework is enforcement-first by design; workflows are documented patterns that must be implemented per project needs.
 
 ---
 
@@ -292,7 +335,8 @@ You CAN:
 - Framework roles: `10-roles/`
 - Framework rules: `20-rules/` (especially Rule 01, 03, 04, 06, 07, 08, 10, 11)
 - Templates: `50-templates/`
-- Enforcement workflows: `70-enforcement/`
+- Enforcement workflows (reference): `70-enforcement/` at https://github.com/nsin08/space_framework
+- Framework adoption guide: https://github.com/nsin08/space_framework/blob/main/90-guides/01-framework-adoption.md
 - Project CODEX: `.context/project/CODEX_HANDOVER.md`
 
 ---
