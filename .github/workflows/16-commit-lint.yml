@@ -1,0 +1,29 @@
+name: Commit Lint
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  lint-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Validate commit messages
+        run: |
+          COMMITS=$(git log --format=%s origin/${{ github.base_ref }}..${{ github.sha }})
+          
+          echo "$COMMITS" | while read -r msg; do
+            if ! echo "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore)(\(.+\))?: .+'; then
+              echo "⚠️ Non-conventional commit: $msg"
+            fi
+          done
+          
+          echo "✅ Commit message validation complete"

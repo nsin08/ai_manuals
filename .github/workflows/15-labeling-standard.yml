@@ -1,0 +1,36 @@
+name: Labeling Standard
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled]
+  pull_request:
+    types: [opened, labeled, unlabeled]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  enforce-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate label consistency
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue || context.payload.pull_request;
+            const labels = issue.labels.map(l => l.name);
+            
+            // Check for valid prefixes
+            const validPrefixes = ['state:', 'type:', 'priority:', 'role:'];
+            const invalidLabels = labels.filter(label => {
+              return !validPrefixes.some(prefix => label.startsWith(prefix)) &&
+                     !['bug', 'enhancement', 'documentation', 'good first issue'].includes(label);
+            });
+            
+            if (invalidLabels.length > 0) {
+              console.log(`⚠️ Non-standard labels detected: ${invalidLabels.join(', ')}`);
+            }
+            
+            console.log(`✅ Label validation complete: ${labels.join(', ')}`);

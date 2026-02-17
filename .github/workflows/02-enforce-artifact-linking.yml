@@ -1,0 +1,36 @@
+name: Enforce Artifact Linking
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  validate-pr-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR links to issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            
+            // Check for "Closes #X" or "Resolves #X"
+            const issuePattern = /(Closes|Resolves|Fixes)\s+#\d+/i;
+            
+            if (!issuePattern.test(body)) {
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                body: '❌ **Artifact Linking Violation**: This PR must link to an issue using `Closes #X` or `Resolves #X` in the description.\n\nSee Rule 04: Artifact Linking.',
+                event: 'REQUEST_CHANGES'
+              });
+              core.setFailed('PR does not link to an issue');
+            }
+            
+            console.log('✅ PR links to issue');

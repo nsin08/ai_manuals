@@ -1,0 +1,44 @@
+name: Enforce State Machine
+
+on:
+  issues:
+    types: [labeled, unlabeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  validate-state-transition:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check state label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = issue.labels.map(l => l.name);
+            const stateLabels = labels.filter(l => l.startsWith('state:'));
+            
+            // Ensure exactly one state label
+            if (stateLabels.length > 1) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '⚠️ **State Machine Violation**: Issue has multiple state labels. Only one state: label is allowed.'
+              });
+              core.setFailed('Multiple state labels detected');
+            }
+            
+            if (stateLabels.length === 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '⚠️ **State Machine Violation**: Issue must have exactly one state: label.'
+              });
+              core.setFailed('No state label detected');
+            }
+            
+            console.log(`✅ State machine valid: ${stateLabels[0]}`);

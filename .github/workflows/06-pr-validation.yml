@@ -1,0 +1,42 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  validate-pr-template:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR template completion
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            
+            const requiredSections = [
+              'Changes',
+              'Evidence Mapping',
+              'Closes #'
+            ];
+            
+            const missingSections = requiredSections.filter(section => 
+              !body.includes(section)
+            );
+            
+            if (missingSections.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `⚠️ **PR Template Incomplete**\n\nMissing sections:\n${missingSections.map(s => `- ${s}`).join('\n')}\n\nPlease complete the PR template.`
+              });
+              core.setFailed('PR template incomplete');
+            }
+            
+            console.log('✅ PR template complete');

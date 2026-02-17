@@ -1,0 +1,24 @@
+name: Branch Protection Validation
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check-direct-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect direct push to main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('⚠️ Direct push to main detected - should be blocked by branch protection');
+            console.log('Actor:', context.actor);
+            console.log('Ref:', context.ref);
+            
+            // This workflow runs after the push, so we log for audit
+            // Branch protection rules should prevent this from happening

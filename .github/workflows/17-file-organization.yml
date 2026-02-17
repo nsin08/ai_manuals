@@ -1,0 +1,31 @@
+name: File Organization (Rule 11)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  validate-file-placement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check file placement rules
+        run: |
+          # Check for temp files in root
+          if find . -maxdepth 1 -name 'debug_*.py' -o -name 'temp_*.py' -o -name 'check_*.py' | grep -q .; then
+            echo "❌ Temp files found in root - should be in .context/temp/"
+            exit 1
+          fi
+          
+          # Check for tests outside tests/
+          if find . -path ./tests -prune -o -name 'test_*.py' -print | grep -q .; then
+            echo "❌ Test files found outside tests/ directory"
+            exit 1
+          fi
+          
+          echo "✅ File organization rules validated"

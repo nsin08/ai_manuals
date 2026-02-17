@@ -1,0 +1,36 @@
+name: Issue Validation
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  validate-story-parent:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'type:story')
+    steps:
+      - name: Check Story links to Epic
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            
+            // Check for "Parent: #X" or "Epic: #X"
+            const parentPattern = /(Parent|Epic):\s*#\d+/i;
+            
+            if (!parentPattern.test(body)) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '⚠️ **Missing Parent Link**: Stories must reference their parent Epic using `Parent: #X` or `Epic: #X` in the body.\n\nSee Rule 04: Artifact Linking.'
+              });
+              core.setFailed('Story does not link to Epic');
+            }
+            
+            console.log('✅ Story links to Epic');

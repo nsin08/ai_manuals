@@ -1,0 +1,43 @@
+name: Release Automation
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate release notes
+        id: notes
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | sed -n '2p')
+          CURRENT_TAG=${GITHUB_REF#refs/tags/}
+          
+          echo "## Changes in $CURRENT_TAG" > notes.md
+          echo "" >> notes.md
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "Initial release" >> notes.md
+          else
+            git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"- %s (%h)" --no-merges >> notes.md
+          fi
+          
+          cat notes.md
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: notes.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

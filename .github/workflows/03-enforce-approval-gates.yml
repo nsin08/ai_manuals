@@ -1,0 +1,39 @@
+name: Enforce Approval Gates
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  check-codeowner-approval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CODEOWNER approval
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            
+            // Get reviews
+            const reviews = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+            
+            const approvals = reviews.data.filter(r => r.state === 'APPROVED');
+            
+            // Check if CODEOWNER (@nsin08) approved
+            const codeownerApproved = approvals.some(r => r.user.login === 'nsin08');
+            
+            if (!codeownerApproved && pr.state === 'open') {
+              console.log('⏳ Waiting for CODEOWNER approval from @nsin08');
+            } else if (codeownerApproved) {
+              console.log('✅ CODEOWNER approval received');
+            }

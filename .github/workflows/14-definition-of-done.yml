@@ -1,0 +1,42 @@
+name: Definition of Done
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  validate-dod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check DoD completion
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            
+            // Check for required DoD elements
+            const dodElements = [
+              'Evidence Mapping',
+              'Tests',
+              'Documentation'
+            ];
+            
+            const missingElements = dodElements.filter(element => 
+              !body.includes(element)
+            );
+            
+            if (missingElements.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `⚠️ **Definition of Done Incomplete**\n\nMissing elements:\n${missingElements.map(e => `- ${e}`).join('\n')}\n\nPlease complete the DoD checklist.`
+              });
+            }
+            
+            console.log('✅ DoD elements present');

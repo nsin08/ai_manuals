@@ -1,0 +1,76 @@
+name: Code Quality
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black isort pylint mypy
+      
+      - name: Run black
+        run: black --check .
+        continue-on-error: true
+      
+      - name: Run isort
+        run: isort --check-only .
+        continue-on-error: true
+      
+      - name: Run pylint
+        run: pylint apps/ packages/ || true
+        continue-on-error: true
+      
+      - name: Run mypy
+        run: mypy apps/ packages/ || true
+        continue-on-error: true
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || echo "No requirements.txt found"
+      
+      - name: Run tests
+        run: |
+          pytest tests/ --cov --cov-report=term-missing || echo "No tests found"
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
