@@ -18,7 +18,7 @@ st.sidebar.caption(
 )
 
 st.title('Equipment Manuals Chatbot (MVP Scaffold)')
-st.caption('Phase 1 scaffold: health, catalog, and single-document ingestion trigger.')
+st.caption('Phase 2 scaffold: health, catalog, ingestion trigger, and retrieval preview.')
 
 
 if st.button('Check API Health'):
@@ -65,5 +65,33 @@ if st.button('Ingest Doc'):
     except urllib.error.URLError as exc:
         st.error(f'Ingestion request failed: {exc}')
 
+st.subheader('Search Evidence (Phase 2)')
+search_query = st.text_input('Query', value='fault code corrective action')
+search_doc_id = st.text_input('Doc ID Filter (optional)', value='rockwell_powerflex_40')
+search_top_n = st.slider('Top N', min_value=1, max_value=20, value=8)
+
+if st.button('Search Evidence'):
+    try:
+        params = {
+            'q': search_query,
+            'top_n': str(search_top_n),
+        }
+        if search_doc_id.strip():
+            params['doc_id'] = search_doc_id.strip()
+
+        query_string = urllib.parse.urlencode(params)
+        url = f'{API_BASE_URL}/search?{query_string}'
+
+        with urllib.request.urlopen(url, timeout=60) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+
+        st.success('Search completed')
+        st.json(payload)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='replace')
+        st.error(f'Search failed: HTTP {exc.code} - {body}')
+    except urllib.error.URLError as exc:
+        st.error(f'Search request failed: {exc}')
+
 st.subheader('Next Phase')
-st.write('Phase 2 will add hybrid retrieval and evidence ranking.')
+st.write('Phase 3 will add grounded answer generation with citation formatting.')

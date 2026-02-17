@@ -16,7 +16,7 @@ Status: Active Tracking
 |------|--------|-----------------|------------------|
 | Phase 0 - Foundation and Data Contracts | done | 2026-02-17 | Skeleton, config, compose runtime, and contract-validation verified in Docker |
 | Phase 1 - Ingestion Pipeline | in progress |  | Parser/table/worker and chunk persistence implemented; OCR adapters added, phase exit criteria still open |
-| Phase 2 - Retrieval | not started |  |  |
+| Phase 2 - Retrieval | in progress |  | Hybrid retrieval + trace logging implemented with local adapters; pgvector/FTS backend integration pending |
 | Phase 3 - Answering and Citations | not started |  |  |
 | Phase 4 - UI and Evaluation | not started |  |  |
 | Phase 5 - Hardening | not started |  |  |
@@ -59,12 +59,13 @@ Phase 1 exit criteria:
 
 | Item | Owner | Status | Date | Evidence |
 |------|-------|--------|------|----------|
-| FTS retrieval implemented |  | not started |  |  |
-| Vector retrieval implemented (pgvector) |  | not started |  |  |
-| Hybrid merge and scoring implemented |  | not started |  |  |
-| Query-intent weighting for table/diagram intents implemented |  | not started |  |  |
-| Retrieval trace logging enabled |  | not started |  |  |
-| Retrieval tests pass (FTS/vector/hybrid) |  | not started |  |  |
+| FTS retrieval implemented | Codex | in progress | 2026-02-17 | `packages/adapters/retrieval/simple_keyword_search_adapter.py` (BM25-like local lexical scoring) |
+| Vector retrieval implemented (pgvector) | Codex | in progress | 2026-02-17 | `packages/adapters/retrieval/hash_vector_search_adapter.py` (local vector fallback; pgvector adapter pending) |
+| Hybrid merge and scoring implemented | Codex | done | 2026-02-17 | `packages/application/use_cases/search_evidence.py` (keyword + vector normalization and merge) |
+| Query-intent weighting for table/diagram intents implemented | Codex | done | 2026-02-17 | `packages/application/use_cases/search_evidence.py` intent detection + content-type weighting |
+| Retrieval trace logging enabled | Codex | done | 2026-02-17 | `.context/reports/retrieval_traces.jsonl`, `packages/adapters/retrieval/retrieval_trace_logger.py` |
+| Retrieval tests pass (FTS/vector/hybrid) | Codex | done | 2026-02-17 | `pytest tests -q` -> `17 passed`; `tests/unit/test_retrieval.py`, `tests/integration/test_retrieval_pipeline.py` |
+| Retrieval API endpoint available | Codex | done | 2026-02-17 | `GET /search` in `apps/api/main.py`; verified with `q=fault code corrective action` |
 
 Phase 2 exit criteria:
 - Golden subset retrieval check (top-k relevance) captured with evidence.

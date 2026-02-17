@@ -14,6 +14,7 @@ class AppConfig:
     ocr_engine: str
     ocr_fallback_engine: str
     ingest_concurrency: int
+    retrieval_trace_file: str
 
 
 
@@ -29,4 +30,7 @@ def load_config() -> AppConfig:
         ocr_engine=os.getenv('OCR_ENGINE', 'paddle'),
         ocr_fallback_engine=os.getenv('OCR_FALLBACK_ENGINE', 'tesseract'),
         ingest_concurrency=int(os.getenv('INGEST_CONCURRENCY', '2')),
+        retrieval_trace_file=os.getenv(
+            'RETRIEVAL_TRACE_FILE', '.context/reports/retrieval_traces.jsonl'
+        ),
     )

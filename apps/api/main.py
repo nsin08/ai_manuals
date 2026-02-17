@@ -2,17 +2,25 @@
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
 from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
+from packages.adapters.retrieval.filesystem_chunk_query_adapter import FilesystemChunkQueryAdapter
+from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
+from packages.adapters.retrieval.retrieval_trace_logger import RetrievalTraceLogger
+from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
 from packages.adapters.tables.simple_table_extractor_adapter import SimpleTableExtractorAdapter
 from packages.application.config import load_config
 from packages.application.use_cases.ingest_document import (
     IngestDocumentInput,
     ingest_document_use_case,
+)
+from packages.application.use_cases.search_evidence import (
+    SearchEvidenceInput,
+    search_evidence_use_case,
 )
 from packages.application.use_cases.validate_data_contracts import (
     ValidateDataContractsInput,
@@ -25,7 +33,7 @@ CATALOG_PATH = DATA_DIR / 'document_catalog.yaml'
 GOLDEN_PATH = DATA_DIR / 'golden_questions.yaml'
 ASSETS_DIR = Path('data/assets')
 
-app = FastAPI(title='Equipment Manuals Chatbot API', version='0.3.0')
+app = FastAPI(title='Equipment Manuals Chatbot API', version='0.4.0')
 
 
 @app.get('/health')
@@ -108,4 +116,40 @@ def ingest_document(doc_id: str) -> dict[str, object]:
         'asset_ref': result.asset_ref,
         'total_chunks': result.total_chunks,
         'by_type': result.by_type,
+    }
+
+
+@app.get('/search')
+def search(
+    q: str = Query(..., min_length=1),
+    doc_id: str | None = None,
+    top_n: int = Query(8, ge=1, le=50),
+) -> dict[str, object]:
+    cfg = load_config()
+    output = search_evidence_use_case(
+        SearchEvidenceInput(query=q, doc_id=doc_id, top_n=top_n),
+        chunk_query=FilesystemChunkQueryAdapter(ASSETS_DIR),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=RetrievalTraceLogger(Path(cfg.retrieval_trace_file)),
+    )
+
+    return {
+        'query': output.query,
+        'intent': output.intent,
+        'total_chunks_scanned': output.total_chunks_scanned,
+        'hits': [
+            {
+                'chunk_id': hit.chunk_id,
+                'doc_id': hit.doc_id,
+                'content_type': hit.content_type,
+                'page_start': hit.page_start,
+                'page_end': hit.page_end,
+                'score': hit.score,
+                'keyword_score': hit.keyword_score,
+                'vector_score': hit.vector_score,
+                'snippet': hit.snippet,
+            }
+            for hit in output.hits
+        ],
     }
