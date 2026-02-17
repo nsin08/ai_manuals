@@ -15,7 +15,7 @@ Status: Active Tracking
 | Phase | Status | Completion Date | Evidence Summary |
 |------|--------|-----------------|------------------|
 | Phase 0 - Foundation and Data Contracts | done | 2026-02-17 | Skeleton, config, compose runtime, and contract-validation verified in Docker |
-| Phase 1 - Ingestion Pipeline | in progress |  | Parser/table/worker and chunk persistence scaffold implemented; OCR is placeholder |
+| Phase 1 - Ingestion Pipeline | in progress |  | Parser/table/worker and chunk persistence implemented; OCR adapters added, phase exit criteria still open |
 | Phase 2 - Retrieval | not started |  |  |
 | Phase 3 - Answering and Citations | not started |  |  |
 | Phase 4 - UI and Evaluation | not started |  |  |
@@ -41,12 +41,15 @@ Phase 0 exit criteria:
 | Item | Owner | Status | Date | Evidence |
 |------|-------|--------|------|----------|
 | PDF parser adapter implemented | Codex | done | 2026-02-17 | `packages/adapters/pdf/pypdf_parser_adapter.py` |
-| OCR adapter implemented (primary + fallback behavior) | Codex | in progress | 2026-02-17 | `packages/adapters/ocr/noop_ocr_adapter.py` (placeholder until Paddle/Tesseract adapters) |
-| Table extraction adapter implemented with fallback | Codex | done | 2026-02-17 | `packages/adapters/tables/simple_table_extractor_adapter.py` |
+| OCR adapter implemented (primary + fallback behavior) | Codex | done | 2026-02-17 | `packages/adapters/ocr/paddle_ocr_adapter.py`, `packages/adapters/ocr/tesseract_ocr_adapter.py`, `packages/adapters/ocr/factory.py` |
+| Table extraction adapter implemented with fallback | Codex | done | 2026-02-17 | `packages/adapters/tables/simple_table_extractor_adapter.py` (enhanced heuristics) |
 | Ingestion worker job implemented and runnable | Codex | done | 2026-02-17 | `apps/worker/main.py`, `docker ps` shows `infra-worker-1` up |
-| Chunk persistence includes `text`, `table`, `figure_ocr`, `figure_caption` | Codex | in progress | 2026-02-17 | `packages/application/use_cases/ingest_document.py` |
+| Chunk persistence includes `text`, `table`, `figure_ocr`, `figure_caption` | Codex | done | 2026-02-17 | `packages/application/use_cases/ingest_document.py`; API ingest result includes typed chunk counts |
 | Asset storage references persisted correctly | Codex | done | 2026-02-17 | `packages/adapters/storage/filesystem_chunk_store_adapter.py`, output `data/assets/rockwell_powerflex_40/chunks.jsonl` |
-| Integration tests for ingestion adapters pass | Codex | done | 2026-02-17 | `pytest tests -q` -> `8 passed`; `tests/integration/test_ingest_pipeline.py` |
+| Integration tests for ingestion adapters pass | Codex | done | 2026-02-17 | `pytest tests -q` -> `12 passed`; `tests/integration/test_ingest_pipeline.py`, `tests/unit/test_ocr_and_tables.py` |
+| Ingestion run summary attached as evidence | Codex | done | 2026-02-17 | `scripts/run_ingestion.py --doc-id rockwell_powerflex_40` -> `total_chunks: 510` (`text:156`, `table:328`, `figure_caption:26`) |
+| Sample citations attached as evidence | Codex | blocked | 2026-02-17 | Citation generation is Phase 3 behavior; ingestion currently produces chunk artifacts but no answer citations |
+| Phase 1 commits recorded | Codex | done | 2026-02-17 | `f6e53c0` (ingestion scaffold), `fb78e16` (OCR + table improvements) |
 
 Phase 1 exit criteria:
 - At least 3 PDFs ingested successfully (digital + scanned mix).
