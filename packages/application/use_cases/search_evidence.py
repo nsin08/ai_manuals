@@ -26,6 +26,9 @@ class EvidenceHit:
     content_type: str
     page_start: int
     page_end: int
+    section_path: str | None
+    figure_id: str | None
+    table_id: str | None
     score: float
     keyword_score: float
     vector_score: float
@@ -166,6 +169,9 @@ def search_evidence_use_case(
                 content_type=chunk.content_type,
                 page_start=chunk.page_start,
                 page_end=chunk.page_end,
+                section_path=chunk.section_path,
+                figure_id=chunk.figure_id,
+                table_id=chunk.table_id,
                 score=round(weighted, 6),
                 keyword_score=round(row['keyword_score'], 6),
                 vector_score=round(row['vector_score'], 6),
@@ -190,6 +196,9 @@ def search_evidence_use_case(
                         'doc_id': h.doc_id,
                         'content_type': h.content_type,
                         'page_start': h.page_start,
+                        'section_path': h.section_path,
+                        'figure_id': h.figure_id,
+                        'table_id': h.table_id,
                         'score': h.score,
                     }
                     for h in top_hits

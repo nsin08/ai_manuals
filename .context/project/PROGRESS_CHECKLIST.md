@@ -17,7 +17,7 @@ Status: Active Tracking
 | Phase 0 - Foundation and Data Contracts | done | 2026-02-17 | Skeleton, config, compose runtime, and contract-validation verified in Docker |
 | Phase 1 - Ingestion Pipeline | in progress |  | Parser/table/worker and chunk persistence implemented; OCR adapters added, phase exit criteria still open |
 | Phase 2 - Retrieval | in progress |  | Hybrid retrieval + trace logging implemented with local adapters; pgvector/FTS backend integration pending |
-| Phase 3 - Answering and Citations | not started |  |  |
+| Phase 3 - Answering and Citations | done | 2026-02-18 | Grounded answer use-case, citation formatter, answer trace logging, and behavior/contract tests passing |
 | Phase 4 - UI and Evaluation | not started |  |  |
 | Phase 5 - Hardening | not started |  |  |
 
@@ -48,7 +48,7 @@ Phase 0 exit criteria:
 | Asset storage references persisted correctly | Codex | done | 2026-02-17 | `packages/adapters/storage/filesystem_chunk_store_adapter.py`, output `data/assets/rockwell_powerflex_40/chunks.jsonl` |
 | Integration tests for ingestion adapters pass | Codex | done | 2026-02-17 | `pytest tests -q` -> `12 passed`; `tests/integration/test_ingest_pipeline.py`, `tests/unit/test_ocr_and_tables.py` |
 | Ingestion run summary attached as evidence | Codex | done | 2026-02-17 | `scripts/run_ingestion.py --doc-id rockwell_powerflex_40` -> `total_chunks: 510` (`text:156`, `table:328`, `figure_caption:26`) |
-| Sample citations attached as evidence | Codex | blocked | 2026-02-17 | Citation generation is Phase 3 behavior; ingestion currently produces chunk artifacts but no answer citations |
+| Sample citations attached as evidence | Codex | done | 2026-02-18 | `.context/reports/phase3_answer_ok.json` includes doc/page and figure/table citation labels |
 | Phase 1 commits recorded | Codex | done | 2026-02-17 | `f6e53c0` (ingestion scaffold), `fb78e16` (OCR + table improvements) |
 
 Phase 1 exit criteria:
@@ -74,12 +74,12 @@ Phase 2 exit criteria:
 
 | Item | Owner | Status | Date | Evidence |
 |------|-------|--------|------|----------|
-| Evidence-only answer composition implemented |  | not started |  |  |
-| Citation schema enforced (`doc`, `page`, optional figure/table) |  | not started |  |  |
-| Insufficient evidence path implemented (`not found` + closest citations) |  | not started |  |  |
-| Ambiguity follow-up behavior implemented (single concise question) |  | not started |  |  |
-| Contract tests for answer payload pass |  | not started |  |  |
-| Grounding policy behavior tests pass |  | not started |  |  |
+| Evidence-only answer composition implemented | Codex | done | 2026-02-18 | `packages/application/use_cases/answer_question.py` (`answer_question_use_case`) |
+| Citation schema enforced (`doc`, `page`, optional figure/table) | Codex | done | 2026-02-18 | `packages/domain/citation_formatter.py`, `tests/unit/test_citation_formatter.py` |
+| Insufficient evidence path implemented (`not found` + closest citations) | Codex | done | 2026-02-18 | `.context/reports/phase3_answer_not_found.json` |
+| Ambiguity follow-up behavior implemented (single concise question) | Codex | done | 2026-02-18 | `.context/reports/phase3_answer_follow_up.json`, `tests/unit/test_answer_question.py` |
+| Contract tests for answer payload pass | Codex | done | 2026-02-18 | `tests/unit/test_answer_question.py`, `pytest tests -q` -> `23 passed` |
+| Grounding policy behavior tests pass | Codex | done | 2026-02-18 | `tests/unit/test_grounding_policy.py`, `.context/reports/phase3_pytest.txt` |
 
 Phase 3 exit criteria:
 - Sample Q/A outputs demonstrate citation and ambiguity behavior.

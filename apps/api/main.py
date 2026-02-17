@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
 
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
+from packages.adapters.answering.answer_trace_logger import AnswerTraceLogger
 from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
 from packages.adapters.retrieval.filesystem_chunk_query_adapter import FilesystemChunkQueryAdapter
@@ -17,6 +18,10 @@ from packages.application.config import load_config
 from packages.application.use_cases.ingest_document import (
     IngestDocumentInput,
     ingest_document_use_case,
+)
+from packages.application.use_cases.answer_question import (
+    AnswerQuestionInput,
+    answer_question_use_case,
 )
 from packages.application.use_cases.search_evidence import (
     SearchEvidenceInput,
@@ -33,7 +38,7 @@ CATALOG_PATH = DATA_DIR / 'document_catalog.yaml'
 GOLDEN_PATH = DATA_DIR / 'golden_questions.yaml'
 ASSETS_DIR = Path('data/assets')
 
-app = FastAPI(title='Equipment Manuals Chatbot API', version='0.4.0')
+app = FastAPI(title='Equipment Manuals Chatbot API', version='0.5.0')
 
 
 @app.get('/health')
@@ -145,11 +150,52 @@ def search(
                 'content_type': hit.content_type,
                 'page_start': hit.page_start,
                 'page_end': hit.page_end,
+                'section_path': hit.section_path,
+                'figure_id': hit.figure_id,
+                'table_id': hit.table_id,
                 'score': hit.score,
                 'keyword_score': hit.keyword_score,
                 'vector_score': hit.vector_score,
                 'snippet': hit.snippet,
             }
             for hit in output.hits
+        ],
+    }
+
+
+@app.get('/answer')
+def answer(
+    q: str = Query(..., min_length=1),
+    doc_id: str | None = None,
+    top_n: int = Query(6, ge=1, le=20),
+) -> dict[str, object]:
+    cfg = load_config()
+    output = answer_question_use_case(
+        AnswerQuestionInput(query=q, doc_id=doc_id, top_n=top_n),
+        chunk_query=FilesystemChunkQueryAdapter(ASSETS_DIR),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=AnswerTraceLogger(Path(cfg.answer_trace_file)),
+    )
+
+    return {
+        'query': output.query,
+        'intent': output.intent,
+        'status': output.status,
+        'answer': output.answer,
+        'follow_up_question': output.follow_up_question,
+        'warnings': output.warnings,
+        'total_chunks_scanned': output.total_chunks_scanned,
+        'retrieved_chunk_ids': output.retrieved_chunk_ids,
+        'citations': [
+            {
+                'doc_id': citation.doc_id,
+                'page': citation.page,
+                'section_path': citation.section_path,
+                'figure_id': citation.figure_id,
+                'table_id': citation.table_id,
+                'label': citation.label,
+            }
+            for citation in output.citations
         ],
     }

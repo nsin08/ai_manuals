@@ -18,8 +18,13 @@ Core capabilities:
 
 ## Current Status
 
-Planning and architecture baseline is documented under `.context/project/`.
-Implementation scaffolding is the next phase.
+Implemented through Phase 3:
+- Phase 0 foundations and contract validation
+- Phase 1 ingestion pipeline (PDF parsing, OCR adapters, table extraction, chunk storage)
+- Phase 2 hybrid retrieval (keyword + vector fallback, intent weighting, trace logging)
+- Phase 3 grounded answering (citations, not-found path, ambiguity follow-up)
+
+Detailed progress and evidence are tracked in `.context/project/PROGRESS_CHECKLIST.md`.
 
 ## Documentation
 

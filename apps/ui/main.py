@@ -18,7 +18,7 @@ st.sidebar.caption(
 )
 
 st.title('Equipment Manuals Chatbot (MVP Scaffold)')
-st.caption('Phase 2 scaffold: health, catalog, ingestion trigger, and retrieval preview.')
+st.caption('Phase 3 scaffold: health, catalog, ingestion trigger, retrieval, and grounded answers.')
 
 
 if st.button('Check API Health'):
@@ -93,5 +93,30 @@ if st.button('Search Evidence'):
     except urllib.error.URLError as exc:
         st.error(f'Search request failed: {exc}')
 
-st.subheader('Next Phase')
-st.write('Phase 3 will add grounded answer generation with citation formatting.')
+st.subheader('Ask Grounded Question (Phase 3)')
+answer_query = st.text_input('Question', value='What does fault F005 mean and what action is recommended?')
+answer_doc_id = st.text_input('Doc ID Filter for Answer (optional)', value='rockwell_powerflex_40')
+answer_top_n = st.slider('Answer Evidence Top N', min_value=1, max_value=20, value=6)
+
+if st.button('Ask Question'):
+    try:
+        params = {
+            'q': answer_query,
+            'top_n': str(answer_top_n),
+        }
+        if answer_doc_id.strip():
+            params['doc_id'] = answer_doc_id.strip()
+
+        query_string = urllib.parse.urlencode(params)
+        url = f'{API_BASE_URL}/answer?{query_string}'
+
+        with urllib.request.urlopen(url, timeout=60) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+
+        st.success('Answer generated')
+        st.json(payload)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='replace')
+        st.error(f'Answer failed: HTTP {exc.code} - {body}')
+    except urllib.error.URLError as exc:
+        st.error(f'Answer request failed: {exc}')
