@@ -18,7 +18,7 @@ Status: Active Tracking
 | Phase 1 - Ingestion Pipeline | in progress |  | Parser/table/worker and chunk persistence implemented; OCR adapters added, phase exit criteria still open |
 | Phase 2 - Retrieval | in progress |  | Hybrid retrieval + trace logging implemented with local adapters; pgvector/FTS backend integration pending |
 | Phase 3 - Answering and Citations | done | 2026-02-18 | Grounded answer use-case, citation formatter, answer trace logging, and behavior/contract tests passing |
-| Phase 4 - UI and Evaluation | not started |  |  |
+| Phase 4 - UI and Evaluation | done | 2026-02-18 | Upload->query->answer flow in API/UI, golden runner, evaluation report, and E2E tests passing |
 | Phase 5 - Hardening | not started |  |  |
 
 ## Phase 0 - Foundation and Data Contracts
@@ -88,12 +88,12 @@ Phase 3 exit criteria:
 
 | Item | Owner | Status | Date | Evidence |
 |------|-------|--------|------|----------|
-| Streamlit upload flow implemented |  | not started |  |  |
-| Chat flow implemented with source panel |  | not started |  |  |
-| Golden-question runner implemented |  | not started |  |  |
-| Per-question evaluation output generated |  | not started |  |  |
-| Aggregate benchmark summary generated (pass/fail + reasons) |  | not started |  |  |
-| E2E tests for upload -> query -> answer pass |  | not started |  |  |
+| Streamlit upload flow implemented | Codex | done | 2026-02-18 | `apps/ui/main.py` upload panel + `POST /upload` integration |
+| Chat flow implemented with source panel | Codex | done | 2026-02-18 | `apps/ui/main.py` answer block with citation source panel |
+| Golden-question runner implemented | Codex | done | 2026-02-18 | `packages/application/use_cases/run_golden_evaluation.py`, `scripts/run_golden_evaluation.py` |
+| Per-question evaluation output generated | Codex | done | 2026-02-18 | `.context/reports/phase4_golden_eval_summary.json` (`results[]`) |
+| Aggregate benchmark summary generated (pass/fail + reasons) | Codex | done | 2026-02-18 | `.context/reports/phase4_golden_eval_summary.json` (`pass_rate`, `failed_questions`, `reasons`) |
+| E2E tests for upload -> query -> answer pass | Codex | done | 2026-02-18 | `tests/integration/test_api_e2e.py`, `.context/reports/phase4_e2e_upload_query_answer.txt` |
 
 Phase 4 exit criteria:
 - Demo checklist and benchmark report attached.

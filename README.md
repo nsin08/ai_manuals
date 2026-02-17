@@ -23,6 +23,7 @@ Implemented through Phase 3:
 - Phase 1 ingestion pipeline (PDF parsing, OCR adapters, table extraction, chunk storage)
 - Phase 2 hybrid retrieval (keyword + vector fallback, intent weighting, trace logging)
 - Phase 3 grounded answering (citations, not-found path, ambiguity follow-up)
+- Phase 4 UI and evaluation (upload flow, chat source panel, golden-question runner)
 
 Detailed progress and evidence are tracked in `.context/project/PROGRESS_CHECKLIST.md`.
 
