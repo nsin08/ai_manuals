@@ -1,0 +1,10 @@
+# CODEOWNERS file for ai_manuals repository
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global owner (all files)
+* @nsin08
+
+# Governance files (extra protection)
+/.github/ @nsin08
+/.github/CODEOWNERS @nsin08
+/.github/workflows/ @nsin08
