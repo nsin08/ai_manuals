@@ -9,6 +9,7 @@ Location: `.context/project/` (committed to version control).
 |----------|---------|
 | [CODEX_HANDOVER.md](CODEX_HANDOVER.md) | MVP requirements and constraints |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | Comprehensive delivery plan and milestones |
+| [PROGRESS_CHECKLIST.md](PROGRESS_CHECKLIST.md) | Phase-by-phase progress and evidence tracking |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Hexagonal architecture, modules, and data flow |
 | [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) | Phased implementation sequence |
 | [ADR/](ADR/) | Architecture Decision Records |
@@ -23,6 +24,7 @@ Location: `.context/project/` (committed to version control).
 |-- README.md
 |-- CODEX_HANDOVER.md
 |-- PROJECT_PLAN.md
+|-- PROGRESS_CHECKLIST.md
 |-- IMPLEMENTATION_ROADMAP.md
 |-- ARCHITECTURE.md
 |-- ADR/
