@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
-from packages.adapters.ocr.noop_ocr_adapter import NoopOcrAdapter
+from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
 from packages.adapters.tables.simple_table_extractor_adapter import SimpleTableExtractorAdapter
@@ -25,7 +25,7 @@ CATALOG_PATH = DATA_DIR / 'document_catalog.yaml'
 GOLDEN_PATH = DATA_DIR / 'golden_questions.yaml'
 ASSETS_DIR = Path('data/assets')
 
-app = FastAPI(title='Equipment Manuals Chatbot API', version='0.2.0')
+app = FastAPI(title='Equipment Manuals Chatbot API', version='0.3.0')
 
 
 @app.get('/health')
@@ -43,6 +43,8 @@ def health() -> dict[str, object]:
         'status': 'ok' if validation.is_valid() else 'degraded',
         'app_env': cfg.app_env,
         'llm_provider': cfg.llm_provider,
+        'ocr_engine': cfg.ocr_engine,
+        'ocr_fallback_engine': cfg.ocr_fallback_engine,
         'contract_errors': len(validation.errors),
         'contract_warnings': len(validation.warnings),
     }
@@ -74,6 +76,7 @@ def list_catalog() -> dict[str, object]:
 
 @app.post('/ingest/{doc_id}')
 def ingest_document(doc_id: str) -> dict[str, object]:
+    cfg = load_config()
     catalog = YamlDocumentCatalogAdapter(CATALOG_PATH)
     record = catalog.get(doc_id)
 
@@ -90,10 +93,12 @@ def ingest_document(doc_id: str) -> dict[str, object]:
     if not pdf_path.exists():
         raise HTTPException(status_code=400, detail=f'PDF file missing for {doc_id}: {pdf_path}')
 
+    ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
+
     result = ingest_document_use_case(
         IngestDocumentInput(doc_id=doc_id, pdf_path=pdf_path),
         pdf_parser=PypdfParserAdapter(),
-        ocr_adapter=NoopOcrAdapter(),
+        ocr_adapter=ocr_adapter,
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(ASSETS_DIR),
     )

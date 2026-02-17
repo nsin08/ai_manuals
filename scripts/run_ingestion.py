@@ -10,7 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
-from packages.adapters.ocr.noop_ocr_adapter import NoopOcrAdapter
+from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
 from packages.adapters.tables.simple_table_extractor_adapter import SimpleTableExtractorAdapter
@@ -36,6 +36,8 @@ def parse_args() -> argparse.Namespace:
         default=Path('data/assets'),
         help='Output directory for persisted chunk artifacts',
     )
+    parser.add_argument('--ocr-engine', default='paddle', help='OCR engine: paddle|tesseract|noop')
+    parser.add_argument('--ocr-fallback', default='tesseract', help='Fallback OCR engine')
     return parser.parse_args()
 
 
@@ -58,10 +60,12 @@ def main() -> int:
         print(f'ERROR: file not found for {args.doc_id}: {pdf_path}')
         return 1
 
+    ocr_adapter = create_ocr_adapter(args.ocr_engine, args.ocr_fallback)
+
     result = ingest_document_use_case(
         IngestDocumentInput(doc_id=args.doc_id, pdf_path=pdf_path),
         pdf_parser=PypdfParserAdapter(),
-        ocr_adapter=NoopOcrAdapter(),
+        ocr_adapter=ocr_adapter,
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(args.assets_dir),
     )

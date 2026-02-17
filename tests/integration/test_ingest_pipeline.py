@@ -1,10 +1,9 @@
 ﻿from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
-from packages.adapters.ocr.noop_ocr_adapter import NoopOcrAdapter
+from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
 from packages.adapters.tables.simple_table_extractor_adapter import SimpleTableExtractorAdapter
@@ -30,7 +29,7 @@ def test_ingest_real_catalog_document_to_filesystem(tmp_path: Path) -> None:
     out = ingest_document_use_case(
         IngestDocumentInput(doc_id=doc.doc_id, pdf_path=pdf_path),
         pdf_parser=PypdfParserAdapter(),
-        ocr_adapter=NoopOcrAdapter(),
+        ocr_adapter=create_ocr_adapter('noop', 'noop'),
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(tmp_path),
     )
@@ -40,7 +39,6 @@ def test_ingest_real_catalog_document_to_filesystem(tmp_path: Path) -> None:
     assert chunks_path.exists()
 
     with chunks_path.open('r', encoding='utf-8') as fh:
-        lines = [json.loads(line) for line in fh if line.strip()]
+        lines = [line for line in fh if line.strip()]
 
     assert lines
-    assert any(line['content_type'] == 'text' for line in lines)

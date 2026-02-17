@@ -44,6 +44,13 @@ def _extract_figure_captions(page_text: str) -> list[str]:
 
 
 
+def _should_attempt_ocr(page_text: str) -> bool:
+    # For scanned pages, parser text is empty/very short/noisy.
+    compact = re.sub(r'\s+', ' ', page_text or '').strip()
+    return len(compact) < 80
+
+
+
 def ingest_document_use_case(
     input_data: IngestDocumentInput,
     pdf_parser: PdfParserPort,
@@ -61,6 +68,10 @@ def ingest_document_use_case(
 
     for page in pages:
         page_text = page.text.strip()
+        page_ocr_text = ''
+
+        if _should_attempt_ocr(page_text):
+            page_ocr_text = ocr_adapter.extract_text(str(input_data.pdf_path), page.page_number).strip()
 
         if page_text:
             add_chunk(
@@ -73,21 +84,21 @@ def ingest_document_use_case(
                     content_text=page_text,
                 )
             )
-        else:
-            ocr_text = ocr_adapter.extract_text(str(input_data.pdf_path), page.page_number).strip()
-            if ocr_text:
-                add_chunk(
-                    Chunk(
-                        chunk_id=_new_chunk_id(),
-                        doc_id=input_data.doc_id,
-                        content_type='figure_ocr',
-                        page_start=page.page_number,
-                        page_end=page.page_number,
-                        content_text=ocr_text,
-                    )
-                )
 
-        for table in table_extractor.extract(page_text, page.page_number):
+        if page_ocr_text:
+            add_chunk(
+                Chunk(
+                    chunk_id=_new_chunk_id(),
+                    doc_id=input_data.doc_id,
+                    content_type='figure_ocr',
+                    page_start=page.page_number,
+                    page_end=page.page_number,
+                    content_text=page_ocr_text,
+                )
+            )
+
+        table_source_text = page_text if page_text else page_ocr_text
+        for table in table_extractor.extract(table_source_text, page.page_number):
             add_chunk(
                 Chunk(
                     chunk_id=_new_chunk_id(),
@@ -116,8 +127,10 @@ def ingest_document_use_case(
                 )
             )
 
-            ocr_text = ocr_adapter.extract_text(str(input_data.pdf_path), page.page_number).strip()
-            if ocr_text:
+            figure_ocr_text = page_ocr_text or ocr_adapter.extract_text(
+                str(input_data.pdf_path), page.page_number
+            ).strip()
+            if figure_ocr_text:
                 add_chunk(
                     Chunk(
                         chunk_id=_new_chunk_id(),
@@ -125,7 +138,7 @@ def ingest_document_use_case(
                         content_type='figure_ocr',
                         page_start=page.page_number,
                         page_end=page.page_number,
-                        content_text=ocr_text,
+                        content_text=figure_ocr_text,
                         figure_id=fig_id,
                     )
                 )
