@@ -1,0 +1,207 @@
+﻿meta:
+  version: "1.0"
+  scoring:
+    must_have:
+      - "answer includes doc + page citation"
+      - "answer is grounded in retrieved evidence (no hallucination)"
+    bonus:
+      - "figure/table id cited when relevant"
+      - "diagram/table correctly interpreted"
+  docs:
+    navfac_generator_manual: "NAVFAC - Auxiliary Generators O&M manual (PDF)"
+    neets_module_4: "NEETS Module 4 - wiring/schematics training (PDF)"
+    grundfos_seg_manual: "Grundfos SEG installation/operation manual (PDF)"
+    siemens_g120_basic_positioner: "SINAMICS G120 Basic Positioner function manual (PDF)"
+    rockwell_powerflex_40: "PowerFlex 40 user manual (PDF)"
+    timken_bearing_setting: "Timken tapered roller bearing setting techniques (PDF)"
+
+questions:
+  # --- NAVFAC Auxiliary Generators (O&M / troubleshooting / procedures) ---
+  - id: NAV-01
+    doc: navfac_generator_manual
+    intent: troubleshooting
+    evidence: text
+    question: "Generator will not start. What are the recommended troubleshooting checks in order (fuel, controls, safety devices, etc.)?"
+  - id: NAV-02
+    doc: navfac_generator_manual
+    intent: procedure
+    evidence: text
+    question: "What is the step-by-step procedure to safely shut down the generator and place it out of service?"
+  - id: NAV-03
+    doc: navfac_generator_manual
+    intent: maintenance
+    evidence: table
+    question: "Find the maintenance interval schedule (daily/weekly/monthly/etc.). Summarize the key tasks and intervals."
+  - id: NAV-04
+    doc: navfac_generator_manual
+    intent: troubleshooting
+    evidence: text
+    question: "Generator starts but has low output voltage. What causes are listed and what corrective actions are recommended?"
+  - id: NAV-05
+    doc: navfac_generator_manual
+    intent: safety
+    evidence: text
+    question: "What safety warnings/precautions are specified for maintenance (e.g., lockout/tagout, electrical hazards, rotating parts)?"
+
+  # --- NEETS Module 4 (wiring + schematic reading; good for OCR/scanned) ---
+  - id: NEE-01
+    doc: neets_module_4
+    intent: reference
+    evidence: text
+    question: "Explain the difference between series and parallel circuits and how they appear in schematic diagrams."
+  - id: NEE-02
+    doc: neets_module_4
+    intent: reference
+    evidence: table
+    question: "Locate the section/table explaining American Wire Gauge (AWG) or conductor sizing. What does the table say about gauge vs capacity/diameter?"
+  - id: NEE-03
+    doc: neets_module_4
+    intent: procedure
+    evidence: text
+    question: "What are the recommended steps/techniques for making reliable wire splices or terminations?"
+  - id: NEE-04
+    doc: neets_module_4
+    intent: reference
+    evidence: diagram
+    question: "Find an example schematic diagram in the module and explain how to trace signal/power flow through it."
+  - id: NEE-05
+    doc: neets_module_4
+    intent: reference
+    evidence: text
+    question: "What guidance is provided on reading schematic symbols and identifying components from symbol notation?"
+
+  # --- Grundfos SEG manual (installation, fault finding, dimensions) ---
+  - id: GRU-01
+    doc: grundfos_seg_manual
+    intent: commissioning
+    evidence: text
+    question: "What are the pre-start checks and start-up/commissioning steps recommended after installation?"
+  - id: GRU-02
+    doc: grundfos_seg_manual
+    intent: electrical
+    evidence: diagram
+    question: "Locate the electrical connection/wiring diagram. List the terminals/connections and their purpose as described."
+  - id: GRU-03
+    doc: grundfos_seg_manual
+    intent: troubleshooting
+    evidence: table
+    question: "Find the fault finding / troubleshooting table. Pick 3 common faults and summarize causes + remedies."
+  - id: GRU-04
+    doc: grundfos_seg_manual
+    intent: maintenance
+    evidence: text
+    question: "What routine maintenance tasks are specified and what cautions are mentioned (seals, lubrication, inspections)?"
+  - id: GRU-05
+    doc: grundfos_seg_manual
+    intent: spec
+    evidence: diagram
+    question: "Find the dimensional drawing. What key installation dimensions/clearances are specified, and where are they shown?"
+
+  # --- Siemens SINAMICS G120 Basic Positioner (commissioning, parameters, alarms) ---
+  - id: SIE-01
+    doc: siemens_g120_basic_positioner
+    intent: commissioning
+    evidence: text
+    question: "What is the recommended commissioning workflow to enable and verify the Basic Positioner function?"
+  - id: SIE-02
+    doc: siemens_g120_basic_positioner
+    intent: procedure
+    evidence: text
+    question: "What steps are described for homing/reference point setup (how the axis establishes a known position)?"
+  - id: SIE-03
+    doc: siemens_g120_basic_positioner
+    intent: reference
+    evidence: table
+    question: "Find the parameter list/table relevant to positioning (key parameters). Summarize parameter names/IDs and what they control."
+  - id: SIE-04
+    doc: siemens_g120_basic_positioner
+    intent: troubleshooting
+    evidence: text
+    question: "Identify the documented faults/alarms related to positioning. What are the recommended operator actions?"
+  - id: SIE-05
+    doc: siemens_g120_basic_positioner
+    intent: integration
+    evidence: diagram
+    question: "Locate a block diagram or signal interface diagram. Explain the signal flow (setpoint, feedback, enable, fault) using the diagram."
+
+  # --- Rockwell PowerFlex 40 (wiring, parameters, dimensions, faults) ---
+  - id: ROC-01
+    doc: rockwell_powerflex_40
+    intent: installation
+    evidence: text
+    question: "What installation/environment requirements are specified (mounting, ventilation, temperature, clearance)?"
+  - id: ROC-02
+    doc: rockwell_powerflex_40
+    intent: electrical
+    evidence: diagram
+    question: "Find the control terminal wiring diagram. What are the terminals and what functions do they support?"
+  - id: ROC-03
+    doc: rockwell_powerflex_40
+    intent: troubleshooting
+    evidence: table
+    question: "Find the fault code table. Choose 3 faults and summarize the meaning + corrective action."
+  - id: ROC-04
+    doc: rockwell_powerflex_40
+    intent: commissioning
+    evidence: text
+    question: "What are the basic steps to configure the drive for first run (motor data, start/stop source, speed reference)?"
+  - id: ROC-05
+    doc: rockwell_powerflex_40
+    intent: spec
+    evidence: diagram
+    question: "Locate the dimensional drawing. What are the overall dimensions and mounting hole details for a specific frame size?"
+
+  # --- Timken bearing setting techniques (dimensions A/B, endplay/preload, procedures) ---
+  - id: TIM-01
+    doc: timken_bearing_setting
+    intent: concept
+    evidence: text
+    question: "Explain endplay vs preload for tapered roller bearings and why correct setting matters."
+  - id: TIM-02
+    doc: timken_bearing_setting
+    intent: procedure
+    evidence: text
+    question: "What methods are described for setting bearings (e.g., spacer method, torque-turn, direct measurement)? Summarize steps for one method."
+  - id: TIM-03
+    doc: timken_bearing_setting
+    intent: diagram
+    evidence: diagram
+    question: "Find the figure showing dimensions labeled A and B. What do A and B represent in the setup?"
+  - id: TIM-04
+    doc: timken_bearing_setting
+    intent: calculation
+    evidence: text
+    question: "Where the brochure describes calculating spacer/shim thickness, what is the described calculation approach (inputs and output)?"
+  - id: TIM-05
+    doc: timken_bearing_setting
+    intent: troubleshooting
+    evidence: text
+    question: "What symptoms/risks are associated with incorrect bearing setting (too much preload or too much endplay), and what corrective guidance is provided?"
+
+  # --- Cross-document / ambiguity handling (tests follow-up question behavior) ---
+  - id: XDOC-01
+    doc: multiple
+    intent: disambiguation
+    evidence: text
+    question: "What does 'commissioning' mean in the context of these manuals, and what common commissioning steps appear across different equipment?"
+  - id: XDOC-02
+    doc: multiple
+    intent: retrieval
+    evidence: table
+    question: "Across the manuals, find an example of a maintenance interval table/schedule and summarize it with citations."
+  - id: XDOC-03
+    doc: multiple
+    intent: troubleshooting
+    evidence: table
+    question: "Find one troubleshooting table in any manual and extract a specific fault -> cause -> remedy row with citation."
+  - id: XDOC-04
+    doc: multiple
+    intent: diagram
+    evidence: diagram
+    question: "Find a wiring/schematic diagram in any document and explain how to interpret terminal/pin labels using the diagram."
+  - id: XDOC-05
+    doc: multiple
+    intent: follow_up_required
+    evidence: text
+    question: "My equipment trips immediately after start. What should I check first?"
+

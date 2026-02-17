@@ -1,0 +1,35 @@
+﻿version: "1.0"
+base_path: ".context/project/data"
+
+documents:
+  - doc_id: navfac_generator_manual
+    title: "NAVFAC - Auxiliary Generators O&M manual"
+    filename: ""
+    status: missing
+    notes: "Referenced in golden questions but PDF not currently present in this folder."
+
+  - doc_id: neets_module_4
+    title: "NEETS Module 4"
+    filename: "neets_part_04.pdf"
+    status: present
+
+  - doc_id: grundfos_seg_manual
+    title: "Grundfos SEG installation/operation manual"
+    filename: "SEG-Manual-Grundfosliterature-2967.pdf"
+    status: present
+
+  - doc_id: siemens_g120_basic_positioner
+    title: "SINAMICS G120 Basic Positioner function manual"
+    filename: "Function_Manual_Basic_Positioner_en-US.pdf"
+    status: present
+
+  - doc_id: rockwell_powerflex_40
+    title: "PowerFlex 40 user manual"
+    filename: "22b-um001_-en-e.pdf"
+    status: present
+    notes: "Assumed mapping based on Rockwell document naming; verify during ingestion preflight."
+
+  - doc_id: timken_bearing_setting
+    title: "Timken tapered roller bearing setting techniques"
+    filename: "5556_Bearing-Setting-Brochure-1.pdf"
+    status: present
