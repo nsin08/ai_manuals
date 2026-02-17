@@ -73,4 +73,5 @@ coverage.xml
 .DS_Store
 
 # Project specific
-/data/assets/*.pdf  # Don't commit large PDF files
+data/assets/*
+!data/assets/.gitkeep

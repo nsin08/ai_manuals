@@ -3,6 +3,7 @@
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import streamlit as st
@@ -17,7 +18,7 @@ st.sidebar.caption(
 )
 
 st.title('Equipment Manuals Chatbot (MVP Scaffold)')
-st.caption('Phase 0 UI placeholder: health checks and contract visibility.')
+st.caption('Phase 1 scaffold: health, catalog, and single-document ingestion trigger.')
 
 
 if st.button('Check API Health'):
@@ -38,6 +39,31 @@ if st.button('Check Contract Health'):
     except urllib.error.URLError as exc:
         st.error(f'Contract health check failed: {exc}')
 
+st.subheader('Document Catalog')
+if st.button('Load Catalog'):
+    try:
+        with urllib.request.urlopen(f'{API_BASE_URL}/catalog', timeout=10) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+        st.json(payload)
+    except urllib.error.URLError as exc:
+        st.error(f'Catalog request failed: {exc}')
+
+st.subheader('Ingestion Trigger')
+ingest_doc_id = st.text_input('Doc ID', value='rockwell_powerflex_40')
+
+if st.button('Ingest Doc'):
+    try:
+        encoded_doc_id = urllib.parse.quote(ingest_doc_id, safe='')
+        req = urllib.request.Request(f'{API_BASE_URL}/ingest/{encoded_doc_id}', method='POST')
+        with urllib.request.urlopen(req, timeout=120) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+        st.success('Ingestion completed')
+        st.json(payload)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode('utf-8', errors='replace')
+        st.error(f'Ingestion failed: HTTP {exc.code} - {body}')
+    except urllib.error.URLError as exc:
+        st.error(f'Ingestion request failed: {exc}')
 
 st.subheader('Next Phase')
-st.write('Upload and chat workflow will be implemented in later phases.')
+st.write('Phase 2 will add hybrid retrieval and evidence ranking.')

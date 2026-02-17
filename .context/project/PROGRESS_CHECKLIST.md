@@ -15,7 +15,7 @@ Status: Active Tracking
 | Phase | Status | Completion Date | Evidence Summary |
 |------|--------|-----------------|------------------|
 | Phase 0 - Foundation and Data Contracts | done | 2026-02-17 | Skeleton, config, compose runtime, and contract-validation verified in Docker |
-| Phase 1 - Ingestion Pipeline | not started |  |  |
+| Phase 1 - Ingestion Pipeline | in progress |  | Parser/table/worker and chunk persistence scaffold implemented; OCR is placeholder |
 | Phase 2 - Retrieval | not started |  |  |
 | Phase 3 - Answering and Citations | not started |  |  |
 | Phase 4 - UI and Evaluation | not started |  |  |
@@ -40,13 +40,13 @@ Phase 0 exit criteria:
 
 | Item | Owner | Status | Date | Evidence |
 |------|-------|--------|------|----------|
-| PDF parser adapter implemented |  | not started |  |  |
-| OCR adapter implemented (primary + fallback behavior) |  | not started |  |  |
-| Table extraction adapter implemented with fallback |  | not started |  |  |
-| Ingestion worker job implemented and runnable |  | not started |  |  |
-| Chunk persistence includes `text`, `table`, `figure_ocr`, `figure_caption` |  | not started |  |  |
-| Asset storage references persisted correctly |  | not started |  |  |
-| Integration tests for ingestion adapters pass |  | not started |  |  |
+| PDF parser adapter implemented | Codex | done | 2026-02-17 | `packages/adapters/pdf/pypdf_parser_adapter.py` |
+| OCR adapter implemented (primary + fallback behavior) | Codex | in progress | 2026-02-17 | `packages/adapters/ocr/noop_ocr_adapter.py` (placeholder until Paddle/Tesseract adapters) |
+| Table extraction adapter implemented with fallback | Codex | done | 2026-02-17 | `packages/adapters/tables/simple_table_extractor_adapter.py` |
+| Ingestion worker job implemented and runnable | Codex | done | 2026-02-17 | `apps/worker/main.py`, `docker ps` shows `infra-worker-1` up |
+| Chunk persistence includes `text`, `table`, `figure_ocr`, `figure_caption` | Codex | in progress | 2026-02-17 | `packages/application/use_cases/ingest_document.py` |
+| Asset storage references persisted correctly | Codex | done | 2026-02-17 | `packages/adapters/storage/filesystem_chunk_store_adapter.py`, output `data/assets/rockwell_powerflex_40/chunks.jsonl` |
+| Integration tests for ingestion adapters pass | Codex | done | 2026-02-17 | `pytest tests -q` -> `8 passed`; `tests/integration/test_ingest_pipeline.py` |
 
 Phase 1 exit criteria:
 - At least 3 PDFs ingested successfully (digital + scanned mix).
