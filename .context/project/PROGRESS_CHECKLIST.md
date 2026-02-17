@@ -19,7 +19,7 @@ Status: Active Tracking
 | Phase 2 - Retrieval | in progress |  | Hybrid retrieval + trace logging implemented with local adapters; pgvector/FTS backend integration pending |
 | Phase 3 - Answering and Citations | done | 2026-02-18 | Grounded answer use-case, citation formatter, answer trace logging, and behavior/contract tests passing |
 | Phase 4 - UI and Evaluation | done | 2026-02-18 | Upload->query->answer flow in API/UI, golden runner, evaluation report, and E2E tests passing |
-| Phase 5 - Hardening | not started |  |  |
+| Phase 5 - Hardening | done | 2026-02-17 | CI regression gates, baseline performance metrics, security/local-first checks, runbook validation, and signed release checklist |
 
 ## Phase 0 - Foundation and Data Contracts
 
@@ -102,11 +102,11 @@ Phase 4 exit criteria:
 
 | Item | Owner | Status | Date | Evidence |
 |------|-------|--------|------|----------|
-| Regression gates configured in CI |  | not started |  |  |
-| Performance baseline report captured |  | not started |  |  |
-| Security/local-first checks completed |  | not started |  |  |
-| Runbooks validated against real execution |  | not started |  |  |
-| Release checklist completed and signed |  | not started |  |  |
+| Regression gates configured in CI | Codex | done | 2026-02-17 | `.github/workflows/18-regression-gates.yml`, `scripts/run_regression_gates.py` |
+| Performance baseline report captured | Codex | done | 2026-02-17 | `.context/reports/phase5_performance_baseline.json`, `scripts/capture_performance_baseline.py` |
+| Security/local-first checks completed | Codex | done | 2026-02-17 | `.context/reports/phase5_security_local_first.json`, `scripts/check_local_first_security.py` |
+| Runbooks validated against real execution | Codex | done | 2026-02-17 | `.context/reports/phase5_runbook_validation.md`, updated `.context/project/Runbooks/*.md` |
+| Release checklist completed and signed | Codex | done | 2026-02-17 | `.context/project/Runbooks/Release_Checklist.md` |
 
 Phase 5 exit criteria:
 - CI green on release candidate commit.

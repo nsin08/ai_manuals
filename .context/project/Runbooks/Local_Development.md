@@ -1,6 +1,6 @@
 ﻿# Runbook: Local Development
 
-Version: 1.0
+Version: 1.1
 Date: 2026-02-17
 
 ## Prerequisites
@@ -9,24 +9,20 @@ Date: 2026-02-17
 - Docker and Docker Compose
 - Git
 
-## Steps
+## Setup
 
-1. Clone repository and enter project directory.
-2. Create and activate virtual environment.
-3. Install dependencies.
-4. Start containers with `docker compose up -d`.
-5. Start API and UI processes.
+1. Clone repo and `cd` to project root.
+2. Install dependencies: `python -m pip install -r requirements.txt`
+3. Start services: `docker compose -f infra/docker-compose.yml up --build -d`
+4. Open UI: `http://localhost:8501`
+5. Verify API: `http://localhost:8000/health`
 
-## Verification
+## Daily Verification
 
-- API health endpoint responds.
-- UI loads in browser.
-- Postgres and Redis containers are healthy.
+- `python scripts/validate_data_contracts.py --strict-files`
+- `pytest tests -q`
+- `python scripts/run_regression_gates.py --doc-id rockwell_powerflex_40 --limit 5 --min-pass-rate 80`
 
-## Common Local Commands
+## Evidence
 
-- `pytest tests/`
-- `black .`
-- `isort .`
-- `pylint apps/ packages/`
-- `mypy apps/ packages/`
+- `.context/reports/phase5_runbook_validation.md`

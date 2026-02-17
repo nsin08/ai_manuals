@@ -1,49 +1,47 @@
 ﻿# Runbook: Troubleshooting
 
-Version: 1.0
+Version: 1.1
 Date: 2026-02-17
 
-## Symptom: Ingestion Fails on PDF
+## Symptom: Contract validation fails
 
 Checks:
-- Validate file readability and format
-- Review parser adapter logs
-- Confirm OCR dependency availability
+- Run `python scripts/validate_data_contracts.py --strict-files`
+- Confirm every `status: present` catalog file exists in `.context/project/data`
 
 Actions:
-- Retry with fallback parser/OCR
-- Reduce ingestion concurrency for resource contention
+- Fix `document_catalog.yaml` filename/status mismatch
+- Add missing PDF or set status to `missing` if intentionally absent
 
-## Symptom: Poor Answer Quality
+## Symptom: Golden evaluation pass rate drops
 
 Checks:
-- Verify retrieval returns relevant chunks
-- Verify citations map to expected docs/pages
-- Confirm embeddings model is loaded correctly
+- Run `python scripts/run_regression_gates.py --doc-id rockwell_powerflex_40 --limit 5 --min-pass-rate 80`
+- Inspect `.context/reports/phase5_regression_gate.json`
 
 Actions:
-- Tune retrieval top-k and scoring weights
-- Adjust table-first heuristic thresholds
+- Re-ingest affected docs
+- Inspect retrieval traces in `.context/reports/retrieval_traces.jsonl`
+- Review answer citations for missing `doc/page`
 
-## Symptom: Slow Query Responses
+## Symptom: No citations in answers
 
 Checks:
-- Inspect DB query performance and indexes
-- Check worker/API CPU and memory usage
-- Verify model inference latency
+- Verify ingested chunks exist under `data/assets/<doc_id>/chunks.jsonl`
+- Verify `/answer` response includes `retrieved_chunk_ids`
 
 Actions:
-- Optimize retrieval bounds
-- Add caching where safe
-- Scale worker concurrency cautiously
+- Ingest doc again
+- Increase `top_n` on `/answer`
+- Verify query specificity and `doc_id` filter
 
-## Symptom: Service Startup Errors
+## Symptom: Service startup errors
 
 Checks:
-- Missing env vars
-- Port conflicts
-- Container healthcheck failures
+- `docker ps`
+- `docker logs infra-api-1 --tail 200`
+- `docker logs infra-ui-1 --tail 200`
 
 Actions:
-- Correct configuration and restart stack
-- Inspect logs per service
+- Resolve env var/port conflicts
+- Rebuild with `docker compose -f infra/docker-compose.yml up --build -d`

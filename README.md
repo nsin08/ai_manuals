@@ -24,6 +24,7 @@ Implemented through Phase 3:
 - Phase 2 hybrid retrieval (keyword + vector fallback, intent weighting, trace logging)
 - Phase 3 grounded answering (citations, not-found path, ambiguity follow-up)
 - Phase 4 UI and evaluation (upload flow, chat source panel, golden-question runner)
+- Phase 5 hardening (CI regression gates, performance baseline, security/local-first checks, release checklist)
 
 Detailed progress and evidence are tracked in `.context/project/PROGRESS_CHECKLIST.md`.
 

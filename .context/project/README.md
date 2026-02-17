@@ -15,6 +15,7 @@ Location: `.context/project/` (committed to version control).
 | [ADR/](ADR/) | Architecture Decision Records |
 | [Tech_Stack/](Tech_Stack/) | Backend, frontend, and infrastructure guides |
 | [Runbooks/](Runbooks/) | Development and operations runbooks |
+| [Runbooks/Release_Checklist.md](Runbooks/Release_Checklist.md) | Release readiness checklist and sign-off |
 | [data/README.md](data/README.md) | Dataset and golden-question contracts |
 
 ## Directory Structure
@@ -44,7 +45,8 @@ Location: `.context/project/` (committed to version control).
 |   |-- Local_Development.md
 |   |-- Build_and_Test.md
 |   |-- Deployment.md
-|   `-- Troubleshooting.md
+|   |-- Troubleshooting.md
+|   `-- Release_Checklist.md
 `-- data/
     |-- README.md
     |-- golden_questions.yaml

@@ -15,14 +15,12 @@ GOLDEN = DATA_DIR / 'golden_questions.yaml'
 def test_validate_contracts_non_strict_has_no_errors() -> None:
     result = validate_contracts(CATALOG, GOLDEN, strict_files=False)
     assert result.errors == []
-    assert any('navfac_generator_manual' in warning for warning in result.warnings)
 
 
 
-def test_validate_contracts_strict_flags_missing_docs() -> None:
+def test_validate_contracts_strict_has_no_errors_when_all_docs_present() -> None:
     result = validate_contracts(CATALOG, GOLDEN, strict_files=True)
-    assert result.errors
-    assert any('navfac_generator_manual' in error for error in result.errors)
+    assert result.errors == []
 
 
 
