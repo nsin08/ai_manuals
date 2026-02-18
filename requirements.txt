@@ -13,3 +13,4 @@ alembic==1.16.5
 psycopg[binary]==3.2.10
 pgvector==0.4.1
 python-multipart==0.0.20
+cryptography>=42.0.0
