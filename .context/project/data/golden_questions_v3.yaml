@@ -1,0 +1,894 @@
+meta:
+  version: "3.0"
+  description: |
+    Redesigned golden question set focused on the two documents that are actually
+    ingested: siemens_g120_basic_positioner and timken_bearing_setting.
+
+    Design principles (replacing v2.0 template-clone approach):
+      1. Every question is document-specific — a correct answer CANNOT be given
+         without retrieving the right chunk from the right document.
+      2. expected_keywords are long-tail terms that appear only in a narrow
+         content region (parameter names, fault codes, specific values, figures).
+      3. Questions are staged: easy=recall, medium=table/figure read, hard=cross-
+         reference two artefacts (table+diagram, parameter+procedure).
+      4. anchor_page and anchor_artifact fields make citation checking deterministic.
+      5. expected_answer_contains lists concrete values the scored answer MUST
+         include — used to detect hallucination vs. grounded recall.
+
+  scoring:
+    # ── Dimension 1: Expected-match passed ──────────────────────────────────────
+    # A question passes expected-match when:
+    #   len(matched keywords) >= min_keyword_hits
+    # Keywords are chosen so that a hallucinated answer is very unlikely to
+    # accidentally hit them (e.g. "p2596", "F07452", "0.001 inch endplay").
+    # Strategy: use EXACT strings that appear only in real document text
+    #   (parameter numbers, fault codes, specific numeric specs, rare proper nouns).
+    expected_match:
+      rule: "count(expected_keywords found in answer) >= min_keyword_hits"
+      anti_hallucination: |
+        Keywords must be long-tail. Avoid document title words ('generator', 'bearing')
+        that any LLM could guess. Prefer: parameter IDs, fault codes, measured values,
+        section titles, specific procedural verbs found only in that section.
+
+    # ── Dimension 2: Citation doc+page present ──────────────────────────────────
+    # Each citation object must have:
+    #   citation.doc_id == question.doc  AND  citation.page > 0
+    # anchor_page gives the expected page number(s); pass requires at least one
+    # citation landing within ±1 page of any anchor_page entry.
+    citation_doc_page:
+      rule: "citation.doc_id == question.doc AND citation.page in [anchor_page ± 1]"
+      note: |
+        anchor_page is set based on chunk data; set to null for questions where
+        content spans many pages (multi-turn synthesis questions).
+
+    # ── Dimension 3: Grounded answers ───────────────────────────────────────────
+    # A grounded answer must:
+    #   a) Have at least one valid citation (doc+page present)
+    #   b) Include at least one expected_answer_contains value verbatim or near-
+    #      verbatim (case-insensitive substring match after whitespace collapse)
+    #   c) NOT assert a value in hallucination_traps list (values that look
+    #      plausible but are WRONG for this document)
+    grounded:
+      rule: |
+        has_citation AND
+        any(v in normalize(answer) for v in expected_answer_contains) AND
+        none(v in normalize(answer) for v in hallucination_traps)
+      note: |
+        hallucination_traps are set for high-risk questions where a model might
+        confuse e.g. parameter numbers across drive families, or endplay values
+        from a different bearing standard.
+
+  docs:
+    siemens_g120_basic_positioner: "SINAMICS G120 Basic Positioner Function Manual FW V4.6 (Siemens AG, 06/2013)"
+    timken_bearing_setting: "Timken Tapered Roller Bearing Setting Techniques (Timken Company)"
+
+
+# ============================================================
+# SIEMENS G120 BASIC POSITIONER — 15 questions
+# Focus: homing, MDI, traversing blocks, parameters, fault
+#        codes, safety notices, and the functional overview
+#        diagram. All content anchored to specific pages/tables.
+# ============================================================
+questions:
+
+  # ─── EASY / RECALL ────────────────────────────────────────────────────────────
+
+  - id: SIE-A01
+    doc: siemens_g120_basic_positioner
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: [3]
+    anchor_artifact: null
+    question: >
+      According to the SINAMICS G120 Basic Positioner function manual, what are
+      the three top-level numbered sections listed in the table of contents?
+    expected_keywords:
+      - "Introduction"
+      - "Basic positioner"
+      - "Appendix"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "introduction"
+      - "basic positioner"
+      - "appendix"
+    hallucination_traps:
+      - "chapter 3"
+      - "parameters"
+      - "faults"
+
+  - id: SIE-A02
+    doc: siemens_g120_basic_positioner
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: [3]
+    anchor_artifact: null
+    question: >
+      What firmware version and edition date does this SINAMICS G120 Basic
+      Positioner function manual cover?
+    expected_keywords:
+      - "V4.6"
+      - "06/2013"
+      - "A5E31759509B"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "v4.6"
+      - "2013"
+    hallucination_traps:
+      - "V5.1"
+      - "V4.7"
+      - "2015"
+
+  - id: SIE-A03
+    doc: siemens_g120_basic_positioner
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: [4]
+    anchor_artifact: null
+    question: >
+      The G120 Basic Positioner manual defines four notice-level categories in its
+      warning notice system. List all four categories in ascending order of danger
+      and state what each one is triggered by.
+    expected_keywords:
+      - "DANGER"
+      - "WARNING"
+      - "CAUTION"
+      - "NOTICE"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "danger"
+      - "warning"
+      - "caution"
+      - "notice"
+    hallucination_traps:
+      - "ALERT"
+      - "CRITICAL"
+      - "INFO"
+
+  # ─── MEDIUM / TABLE READ ──────────────────────────────────────────────────────
+
+  - id: SIE-A04
+    doc: siemens_g120_basic_positioner
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "p2596 homing type parameter table"
+    question: >
+      In the Basic Positioner parameter list, which parameter number selects the
+      homing type (Referenzierart)? List its valid setting values and explain what
+      each value selects.
+    expected_keywords:
+      - "p2596"
+      - "homing"
+      - "Referenzierart"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "p2596"
+    hallucination_traps:
+      - "p2597"
+      - "p2501"
+      - "P0640"
+
+  - id: SIE-A05
+    doc: siemens_g120_basic_positioner
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "MDI parameters p2600/p2601/p2602"
+    question: >
+      In MDI (Manual Data Input) mode for the SINAMICS G120 Basic Positioner,
+      which parameter defines the target position and which parameter defines the
+      travel velocity? Provide the parameter numbers and their units.
+    expected_keywords:
+      - "p2600"
+      - "p2601"
+      - "MDI"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "p2600"
+      - "p2601"
+    hallucination_traps:
+      - "p2585"
+      - "p1082"
+      - "p0700"
+
+  - id: SIE-A06
+    doc: siemens_g120_basic_positioner
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "traversing block parameter table p2585-p2590"
+    question: >
+      For traversing block (Verfahrsatz) task programming in the G120 Basic
+      Positioner, name the parameters that define (a) the target position,
+      (b) the maximum velocity, and (c) the task condition that links blocks
+      together. State the parameter numbers and the units where applicable.
+    expected_keywords:
+      - "p2585"
+      - "traversing"
+      - "Verfahrsatz"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "p2585"
+    hallucination_traps:
+      - "p2600"
+      - "p1000"
+      - "program step"
+
+  - id: SIE-A07
+    doc: siemens_g120_basic_positioner
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "homing speed parameter p2597"
+    question: >
+      In the SINAMICS G120 Basic Positioner homing parameter set, which parameter
+      sets the search speed used when approaching the reference cam during homing,
+      and which parameter sets the reduced creep speed used after the reference
+      point is detected?
+    expected_keywords:
+      - "p2597"
+      - "p2598"
+      - "homing speed"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "p2597"
+    hallucination_traps:
+      - "p1082"
+      - "p2600"
+      - "p0300"
+
+  # ─── HARD / DIAGRAM & CROSS-REFERENCE ─────────────────────────────────────────
+
+  - id: SIE-A08
+    doc: siemens_g120_basic_positioner
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "Basic positioner functional overview block diagram"
+    question: >
+      The G120 Basic Positioner functional overview diagram shows the signal flow
+      through the position controller.
+      Turn 1: Identify all major function blocks shown in the diagram and describe
+        the input/output signals at each block boundary.
+      Turn 2: Explain how position feedback is fed back to the position controller
+        and what role the encoder interface plays in this loop.
+    expected_keywords:
+      - "position controller"
+      - "setpoint"
+      - "encoder"
+      - "feedback"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "position controller"
+      - "setpoint"
+    hallucination_traps:
+      - "current transformer"
+      - "torque limit from external PLC"
+
+  - id: SIE-A09
+    doc: siemens_g120_basic_positioner
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    anchor_page: null
+    anchor_artifact: "homing sequence diagram / homing type reference cam"
+    question: >
+      Using the homing sequence diagram and the description for homing type
+      'reference cam with zero mark' in the G120 Basic Positioner manual:
+      Turn 1: List the phases of the homing sequence in order (approach, cam
+        detection, zero mark search, home position set).
+      Turn 2: For the reference cam homing type, identify the digital input
+        signals that must be wired, citing the typical parameter that assigns
+        those signals.
+      Turn 3: Describe how to verify that homing completed successfully and
+        state the status bit or parameter that indicates this.
+    expected_keywords:
+      - "reference cam"
+      - "zero mark"
+      - "homing"
+      - "digital input"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "reference cam"
+      - "zero mark"
+    hallucination_traps:
+      - "absolute encoder offset"
+      - "p0400"
+      - "Bero switch"
+
+  - id: SIE-A10
+    doc: siemens_g120_basic_positioner
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "fault/alarm table — F07450 series"
+    question: >
+      Turn 1: In the G120 Basic Positioner fault/alarm tables, find the fault
+        codes in the F074xx group that relate to homing errors. For each fault
+        code, state the full fault name, the most likely cause, and the primary
+        corrective action given in the manual.
+      Turn 2: For the fault that indicates 'homing not completed within the
+        allowed time', explain which parameter controls the timeout value and how
+        an engineer would adjust it to resolve a marginal timing failure.
+    expected_keywords:
+      - "F07450"
+      - "homing"
+      - "fault"
+      - "corrective"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "f07450"
+    hallucination_traps:
+      - "F07100"
+      - "F30001"
+      - "motor overtemperature"
+
+  - id: SIE-A11
+    doc: siemens_g120_basic_positioner
+    intent: integration
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    anchor_page: null
+    anchor_artifact: "digital I/O assignment table + positioner control word diagram"
+    question: >
+      To integrate the G120 Basic Positioner with an external PLC via digital I/O:
+      Turn 1: What control word bits are required to enable the basic positioner
+        and activate a traversing task? Identify the bit positions and their
+        functions from the control/status word table.
+      Turn 2: Cross-reference the digital input parameter table to identify which
+        parameters must be set to assign the 'activate traversing task' and
+        'homing request' signals to physical terminal inputs.
+      Turn 3: What status bits confirm that the positioner has reached the target
+        position and is ready for the next command?
+    expected_keywords:
+      - "control word"
+      - "status word"
+      - "traversing task"
+      - "digital input"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "control word"
+      - "traversing"
+    hallucination_traps:
+      - "PROFIBUS PZD"
+      - "r63"
+      - "torque control word"
+
+  - id: SIE-A12
+    doc: siemens_g120_basic_positioner
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: text
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      Turn 1: Explain the key operational differences between the three basic
+        positioner operating modes: MDI mode, Traversing Block mode, and Jog mode.
+        For each mode, state which parameter activates it and any hardware
+        prerequisites.
+      Turn 2: A machine builder needs to implement a repetitive 10-position
+        indexing table. Using only the information in the G120 Basic Positioner
+        manual, justify which of the three modes is most appropriate and identify
+        any limitations that apply.
+    expected_keywords:
+      - "MDI"
+      - "traversing block"
+      - "jog"
+      - "operating mode"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "mdi"
+      - "traversing block"
+    hallucination_traps:
+      - "servo positioning mode"
+      - "electronic cam"
+      - "SIMATIC"
+
+
+# ============================================================
+# TIMKEN BEARING SETTING — 15 questions
+# Focus: endplay/preload distinction, torque-set method,
+#        preset method, direct clamping, inspection,
+#        measurement procedure, and cross-section figures.
+# ============================================================
+
+  # ─── EASY / RECALL ────────────────────────────────────────────────────────────
+
+  - id: TIM-A01
+    doc: timken_bearing_setting
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      The Timken bearing setting document describes three distinct bearing setting
+      conditions for tapered roller bearings. Name all three conditions and
+      briefly describe what distinguishes each one in terms of internal bearing
+      clearance.
+    expected_keywords:
+      - "endplay"
+      - "preload"
+      - "zero clearance"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "endplay"
+      - "preload"
+    hallucination_traps:
+      - "interference fit"
+      - "transition fit"
+      - "radial play"
+
+  - id: TIM-A02
+    doc: timken_bearing_setting
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      Name the three bearing setting methods described in the Timken document and
+      state in one sentence when each method is typically used.
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "direct clamping"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "torque-set"
+      - "preset"
+    hallucination_traps:
+      - "shim-set"
+      - "cold-press method"
+      - "hydraulic nut"
+
+  - id: TIM-A03
+    doc: timken_bearing_setting
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      Before installing a tapered roller bearing, the Timken document specifies
+      several inspection checks. List the conditions that require rejection or
+      replacement of the bearing components.
+    expected_keywords:
+      - "inspect"
+      - "pitting"
+      - "wear"
+      - "roller"
+      - "race"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "inspect"
+      - "race"
+    hallucination_traps:
+      - "X-ray inspection"
+      - "hardness testing"
+      - "magnetic particle"
+
+  # ─── MEDIUM / TABLE & PROCEDURE READ ──────────────────────────────────────────
+
+  - id: TIM-A04
+    doc: timken_bearing_setting
+    intent: procedure
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "torque-set method procedure steps"
+    question: >
+      Describe the complete torque-set bearing setting procedure step by step,
+      exactly as presented in the Timken document. Include the torque application
+      sequence and the back-off step.
+    expected_keywords:
+      - "torque-set"
+      - "back-off"
+      - "rotating"
+      - "adjusting nut"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "torque-set"
+      - "back-off"
+    hallucination_traps:
+      - "heat to 250°F"
+      - "press fit"
+      - "interference"
+
+  - id: TIM-A05
+    doc: timken_bearing_setting
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "torque values table for torque-set method"
+    question: >
+      From the torque-set method specification table in the Timken document,
+      what torque values (in inch-pounds or foot-pounds) are specified for
+      small and large bearing cone bores? State the bore size breakpoints and
+      the corresponding torque values.
+    expected_keywords:
+      - "inch-pound"
+      - "foot-pound"
+      - "bore"
+      - "cone"
+      - "torque"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "inch-pound"
+      - "cone"
+    hallucination_traps:
+      - "newton-metre"
+      - "50 ft-lb"
+      - "200 in-lb"
+
+  - id: TIM-A06
+    doc: timken_bearing_setting
+    intent: procedure
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "preset method procedure"
+    question: >
+      Describe the preset bearing assembly method from the Timken document.
+      What is a spacer or shim used for in this method, and how is the final
+      endplay or preload verified after spacer selection?
+    expected_keywords:
+      - "preset"
+      - "spacer"
+      - "shim"
+      - "endplay"
+      - "dial indicator"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "preset"
+      - "spacer"
+    hallucination_traps:
+      - "split nut"
+      - "hydraulic preload"
+      - "locking compound"
+
+  - id: TIM-A07
+    doc: timken_bearing_setting
+    intent: spec
+    evidence: diagram
+    question_type: multimodal
+    difficulty: medium
+    rag_mode: multimodal
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "tapered roller bearing cross-section figure"
+    question: >
+      Using the cross-section figure of a tapered roller bearing assembly in the
+      Timken document, identify all labeled components (cone, cup, tapered rollers,
+      cage, and any sealing elements shown) and explain the load path through the
+      assembly.
+    expected_keywords:
+      - "cone"
+      - "cup"
+      - "tapered roller"
+      - "cage"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "cone"
+      - "cup"
+      - "tapered roller"
+    hallucination_traps:
+      - "ball bearing retainer"
+      - "angular contact"
+      - "cylindrical roller"
+
+  # ─── HARD / CROSS-REFERENCE ────────────────────────────────────────────────────
+
+  - id: TIM-A08
+    doc: timken_bearing_setting
+    intent: integration
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "direct clamping figure + adjusting nut torque table"
+    question: >
+      Turn 1: Using the direct clamping assembly figure and accompanying text
+        in the Timken document, describe each mechanical step of the direct
+        clamping method, referencing the labeled components in the figure
+        (e.g. adjusting nut position, lock washer, lock nut).
+      Turn 2: Cross-reference the torque value table to determine the correct
+        torque for the final lock-nut tightening step in the direct clamping
+        procedure. State the effect on endplay if the lock nut is over-torqued.
+    expected_keywords:
+      - "direct clamping"
+      - "adjusting nut"
+      - "lock nut"
+      - "endplay"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "direct clamping"
+      - "adjusting nut"
+    hallucination_traps:
+      - "interference fit"
+      - "snap ring"
+      - "set screw"
+
+  - id: TIM-A09
+    doc: timken_bearing_setting
+    intent: troubleshooting
+    evidence: text
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: text
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      Turn 1: A technician measures more endplay than specified after assembly.
+        According to the Timken document, what are the most likely causes and
+        what corrective actions are described?
+      Turn 2: After re-torquing the adjusting nut, the technician measures zero
+        endplay but the bearing runs hot in service. Using the Timken document,
+        identify whether the bearing is now preloaded, the probable source of
+        the problem, and the recommended corrective action.
+    expected_keywords:
+      - "endplay"
+      - "preload"
+      - "adjusting nut"
+      - "heat"
+      - "torque"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "endplay"
+      - "adjusting nut"
+    hallucination_traps:
+      - "press the outer race out"
+      - "replace lubricant with lithium grease"
+      - "wear-in period required"
+
+  - id: TIM-A10
+    doc: timken_bearing_setting
+    intent: procedure
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    anchor_page: null
+    anchor_artifact: "endplay measurement figure + dial indicator procedure"
+    question: >
+      Using the endplay measurement figure and the measurement procedure text in
+      the Timken document:
+      Turn 1: Describe how to set up the dial indicator for endplay measurement,
+        including which component is moved axially and how the indicator is zeroed.
+      Turn 2: State the acceptable endplay range shown in the relevant table or
+        figure callout for a typical application, and explain what action to take
+        if the measured endplay is outside this range.
+      Turn 3: Explain how the same measurement setup is adapted to measure bearing
+        preload (negative endplay) and what the measured deflection value represents
+        in terms of internal bearing geometry.
+    expected_keywords:
+      - "dial indicator"
+      - "endplay"
+      - "axial"
+      - "measurement"
+      - "preload"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "dial indicator"
+      - "endplay"
+    hallucination_traps:
+      - "ultrasonic measurement"
+      - "strain gauge"
+      - "feeler gauge"
+
+  - id: TIM-A11
+    doc: timken_bearing_setting
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: text
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      Turn 1: Compare preloaded and endplay bearing settings as described in the
+        Timken document. For each setting, identify the applications and operating
+        conditions for which it is recommended.
+      Turn 2: If a design engineer is selecting a bearing setting for a high-speed
+        spindle versus a slow-speed heavy-load axle shaft, which setting does the
+        Timken document recommend for each, and why?
+    expected_keywords:
+      - "preload"
+      - "endplay"
+      - "application"
+      - "load"
+      - "speed"
+    min_keyword_hits: 3
+    expected_answer_contains:
+      - "preload"
+      - "endplay"
+    hallucination_traps:
+      - "angular contact 15° contact angle"
+      - "FAG DIN 720"
+      - "ISO 355"
+
+  - id: TIM-A12
+    doc: timken_bearing_setting
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    anchor_page: null
+    anchor_artifact: "overall assembly procedure + dimension callout figures"
+    question: >
+      Create a complete technician checklist for assembling and setting a tapered
+      roller bearing using the torque-set method, based solely on the Timken
+      document.
+      Turn 1: List pre-assembly checks (components, tools, cleanliness).
+      Turn 2: Provide the ordered assembly and torquing sequence, referencing any
+        specific torque values or dial indicator readings from tables or figure
+        callouts.
+      Turn 3: Describe the post-assembly acceptance checks and the criteria that
+        must pass before the assembly is released for service.
+    expected_keywords:
+      - "torque-set"
+      - "dial indicator"
+      - "endplay"
+      - "assembly"
+      - "inspect"
+    min_keyword_hits: 4
+    expected_answer_contains:
+      - "torque-set"
+      - "endplay"
+      - "inspect"
+    hallucination_traps:
+      - "heat bearing to 250°F in oil bath"
+      - "apply Loctite 270"
+      - "torque to 150 ft-lb"
+
+
+# ============================================================
+# TEST STRATEGY NOTES
+# (Embedded here for co-location with the questions)
+# ============================================================
+test_strategy:
+  # ── Expected-match passed ────────────────────────────────────────────────────
+  expected_match_strategy:
+    description: >
+      Each question's expected_keywords list contains at least two terms that
+      appear only in the relevant sub-section.  min_keyword_hits is set so that
+      a model must hit the specific long-tail terms — not just document-level
+      words — to pass.
+    implementation: |
+      # In run_golden_evaluation.py / _evaluate_expected_keywords:
+      # existing logic is correct; improved threshold enforcement:
+      #   1. Reject questions where all expected_keywords appear in the document
+      #      title alone — those cannot distinguish hallucination from recall.
+      #   2. Flag a question as 'trivial' if any single keyword hits >70% of
+      #      chunks (e.g. the word 'bearing' in timken_bearing_setting).
+      #   3. For v3 questions, min_keyword_hits >= 2 ensures at least TWO
+      #      content-specific terms must appear.
+    example_pass_criteria:
+      SIE-A02: "answer must contain 'V4.6' AND '2013' — impossible without retrieving the title page chunk"
+      SIE-A05: "answer must contain 'p2600' AND 'p2601' — only reachable from the MDI parameter table chunk"
+      TIM-A05: "answer must contain 'inch-pound' AND 'cone' — requires reading the torque value table"
+
+  # ── Citation doc+page present ────────────────────────────────────────────────
+  citation_strategy:
+    description: >
+      For questions with anchor_page set, validate that at least one citation
+      lands on an anchor page (±1 tolerance for multi-chunk pages).
+      For anchor_artifact: validate that the citation references the specific
+      table or figure by its id or caption text.
+    implementation: |
+      # Add to GoldenQuestionEvaluation:
+      #   anchor_page_hit: bool   — True if any citation.page in anchor_pages ± 1
+      #   anchor_artifact_hit: bool — True if any citation caption/table_id
+      #                              contains anchor_artifact keywords
+      # Pass criteria upgrade:
+      #   OLD: has_citation_doc_page = citation.doc_id present AND page > 0
+      #   NEW: has_citation_doc_page AND (anchor_page_hit OR anchor_page is None)
+    rationale: >
+      Without page anchoring, a system can cite page 1 (cover page) for every
+      question and pass the citation check.  anchor_page forces the retrieval
+      to find the right page, not just the right document.
+
+  # ── Grounded answers ─────────────────────────────────────────────────────────
+  grounded_strategy:
+    description: >
+      Grounding is verified in three layers:
+        Layer 1 (existing): has valid citation (doc_id + page > 0).
+        Layer 2 (new):      answer contains at least one expected_answer_contains
+                            value (case-insensitive substring after whitespace norm).
+        Layer 3 (new):      answer does NOT contain any hallucination_traps value.
+    implementation: |
+      # Add to _evaluate_question():
+      def _check_grounding(answer_text: str, question: GoldenQuestion) -> tuple[bool, list[str]]:
+          norm = _normalize(answer_text)
+          # Layer 2
+          contains_hits = [v for v in (question.expected_answer_contains or [])
+                           if _normalize(v) in norm]
+          layer2_pass = len(contains_hits) >= 1
+          # Layer 3
+          trap_hits = [v for v in (question.hallucination_traps or [])
+                       if _normalize(v) in norm]
+          layer3_pass = len(trap_hits) == 0
+          reasons = []
+          if not layer2_pass:
+              reasons.append(f"answer missing required evidence: {question.expected_answer_contains}")
+          if not layer3_pass:
+              reasons.append(f"answer contains hallucination trap(s): {trap_hits}")
+          return layer2_pass and layer3_pass, reasons
+    rationale: >
+      Layer 2 catches answers that are fluent but factually empty (no concrete
+      figures, parameter numbers, or procedure values).
+      Layer 3 catches substitution errors where the LLM confuses this document's
+      data with similar-looking data from another source in its training set
+      (e.g., G120 vs G150 parameter numbers, endplay values from ISO 281 vs
+      Timken's own tables).
