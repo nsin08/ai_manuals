@@ -12,6 +12,7 @@ from packages.application.use_cases.answer_question import (
 )
 from packages.ports.chunk_query_port import ChunkQueryPort
 from packages.ports.keyword_search_port import KeywordSearchPort
+from packages.ports.llm_port import LlmPort
 from packages.ports.vector_search_port import VectorSearchPort
 
 
@@ -84,6 +85,7 @@ def run_golden_evaluation_use_case(
     keyword_search: KeywordSearchPort,
     vector_search: VectorSearchPort,
     trace_logger: TraceLoggerPort | None = None,
+    llm: LlmPort | None = None,
 ) -> RunGoldenEvaluationOutput:
     catalog_rows = load_catalog(input_data.catalog_path)
     _, questions = load_golden_questions(input_data.golden_questions_path)
@@ -134,6 +136,7 @@ def run_golden_evaluation_use_case(
             keyword_search=keyword_search,
             vector_search=vector_search,
             trace_logger=trace_logger,
+            llm=llm,
         )
 
         has_citation_doc_page, grounded, follow_up_expected, follow_up_ok, reasons = _evaluate_question(

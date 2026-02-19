@@ -7,6 +7,7 @@ from pathlib import Path
 
 from packages.domain.models import Chunk
 from packages.ports.chunk_store_port import ChunkStorePort
+from packages.ports.embedding_port import EmbeddingPort
 from packages.ports.ocr_port import OcrPort
 from packages.ports.pdf_parser_port import PdfParserPort
 from packages.ports.table_extractor_port import TableExtractorPort
@@ -57,6 +58,7 @@ def ingest_document_use_case(
     ocr_adapter: OcrPort,
     table_extractor: TableExtractorPort,
     chunk_store: ChunkStorePort,
+    embedding_adapter: EmbeddingPort | None = None,
 ) -> IngestDocumentOutput:
     pages = pdf_parser.parse(str(input_data.pdf_path))
     chunks: list[Chunk] = []
@@ -142,6 +144,31 @@ def ingest_document_use_case(
                         figure_id=fig_id,
                     )
                 )
+
+    if embedding_adapter is not None:
+        enriched: list[Chunk] = []
+        for chunk in chunks:
+            embedding = embedding_adapter.embed_text(chunk.content_text)
+            metadata = dict(chunk.metadata or {})
+            if embedding:
+                metadata['embedding'] = embedding
+            enriched.append(
+                Chunk(
+                    chunk_id=chunk.chunk_id,
+                    doc_id=chunk.doc_id,
+                    content_type=chunk.content_type,
+                    page_start=chunk.page_start,
+                    page_end=chunk.page_end,
+                    content_text=chunk.content_text,
+                    section_path=chunk.section_path,
+                    figure_id=chunk.figure_id,
+                    table_id=chunk.table_id,
+                    caption=chunk.caption,
+                    asset_ref=chunk.asset_ref,
+                    metadata=metadata,
+                )
+            )
+        chunks = enriched
 
     asset_ref = chunk_store.persist(input_data.doc_id, chunks)
 

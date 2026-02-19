@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -51,17 +52,79 @@ DIAGRAM_TERMS = {
     'diagram', 'schematic', 'wiring', 'terminal', 'pin', 'connector', 'figure',
     'signal', 'block diagram', 'connection'
 }
-
+_QUERY_EXPANSIONS = {
+    'vs': 'versus',
+    'meaning': 'description',
+    'mean': 'description',
+    'parameter': 'setting',
+    'parameters': 'settings',
+}
+_WORD_RE = re.compile(r'[a-z0-9]+')
+_QUERY_NOISE_TERMS = {
+    'what', 'which', 'when', 'where', 'why', 'how', 'explain', 'describe', 'show',
+    'compare', 'difference', 'versus', 'vs', 'purpose', 'required', 'requirement',
+    'setting', 'settings', 'limitation', 'limitations', 'mode',
+}
 
 
 def _detect_intent(query: str) -> str:
     q = query.lower()
-    if any(term in q for term in DIAGRAM_TERMS):
-        return 'diagram'
-    if any(term in q for term in TABLE_TERMS):
+    table_hits = sum(1 for term in TABLE_TERMS if term in q)
+    diagram_hits = sum(1 for term in DIAGRAM_TERMS if term in q)
+
+    if table_hits > 0 and table_hits >= diagram_hits:
         return 'table'
+    if diagram_hits > 0:
+        return 'diagram'
     return 'general'
 
+
+def _expand_query(query: str) -> str:
+    q = query.strip().lower()
+    if not q:
+        return q
+
+    words = q.split()
+    expanded = list(words)
+
+    for word in words:
+        mapped = _QUERY_EXPANSIONS.get(word)
+        if mapped:
+            expanded.append(mapped)
+
+    if 'compare' in q or ' vs ' in f' {q} ' or 'difference' in q:
+        expanded.extend(['difference', 'comparison'])
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for token in expanded:
+        if token in seen:
+            continue
+        seen.add(token)
+        out.append(token)
+    return ' '.join(out)
+
+
+def _anchor_terms(query: str) -> list[str]:
+    out: list[str] = []
+    for raw in _WORD_RE.findall(query.lower()):
+        token = raw[:-1] if len(raw) > 4 and raw.endswith('s') else raw
+        if len(token) < 3:
+            continue
+        if token in _QUERY_NOISE_TERMS:
+            continue
+        out.append(token)
+    return sorted(set(out))
+
+
+def _anchor_coverage(text: str, anchors: list[str]) -> float:
+    if not anchors:
+        return 1.0
+    tokens = set(_WORD_RE.findall((text or '').lower()))
+    if not tokens:
+        return 0.0
+    matched = sum(1 for anchor in anchors if anchor in tokens)
+    return matched / max(len(anchors), 1)
 
 
 def _normalize_scores(results: list[ScoredChunk]) -> dict[str, float]:
@@ -81,7 +144,6 @@ def _normalize_scores(results: list[ScoredChunk]) -> dict[str, float]:
     }
 
 
-
 def _content_type_weight(content_type: str, intent: str) -> float:
     if intent == 'table':
         if content_type == 'table':
@@ -96,13 +158,11 @@ def _content_type_weight(content_type: str, intent: str) -> float:
     return 1.0
 
 
-
-def _snippet(text: str, max_len: int = 240) -> str:
+def _snippet(text: str, max_len: int = 420) -> str:
     compact = ' '.join((text or '').split())
     if len(compact) <= max_len:
         return compact
     return compact[: max_len - 3] + '...'
-
 
 
 def search_evidence_use_case(
@@ -123,8 +183,10 @@ def search_evidence_use_case(
 
     chunks = chunk_query.list_chunks(doc_id=input_data.doc_id)
     intent = _detect_intent(query)
+    expanded_query = _expand_query(query)
+    anchors = _anchor_terms(query)
 
-    keyword_hits = keyword_search.search(query, chunks, input_data.top_k_keyword)
+    keyword_hits = keyword_search.search(expanded_query, chunks, input_data.top_k_keyword)
     vector_hits = vector_search.search(query, chunks, input_data.top_k_vector)
 
     keyword_norm = _normalize_scores(keyword_hits)
@@ -156,13 +218,17 @@ def search_evidence_use_case(
         )
         by_chunk[key]['vector_score'] = vector_norm.get(key, 0.0)
 
-    hits: list[EvidenceHit] = []
+    scored_hits: list[tuple[float, EvidenceHit]] = []
     for row in by_chunk.values():
         chunk = row['chunk']
         base = 0.5 * row['keyword_score'] + 0.5 * row['vector_score']
-        weighted = base * _content_type_weight(chunk.content_type, intent)
+        coverage = _anchor_coverage(chunk.content_text, anchors)
+        coverage_weight = 0.70 + 0.60 * coverage
+        weighted = base * _content_type_weight(chunk.content_type, intent) * coverage_weight
 
-        hits.append(
+        scored_hits.append(
+            (
+                coverage,
             EvidenceHit(
                 chunk_id=chunk.chunk_id,
                 doc_id=chunk.doc_id,
@@ -176,9 +242,16 @@ def search_evidence_use_case(
                 keyword_score=round(row['keyword_score'], 6),
                 vector_score=round(row['vector_score'], 6),
                 snippet=_snippet(chunk.content_text),
+            ),
             )
         )
 
+    if anchors and len(anchors) >= 2:
+        filtered = [row for row in scored_hits if row[0] >= 0.15]
+        if filtered:
+            scored_hits = filtered
+
+    hits = [row[1] for row in scored_hits]
     hits.sort(key=lambda x: x.score, reverse=True)
     top_hits = hits[: input_data.top_n]
 
@@ -189,6 +262,8 @@ def search_evidence_use_case(
                 'query': query,
                 'intent': intent,
                 'doc_id': input_data.doc_id,
+                'expanded_query': expanded_query,
+                'anchor_terms': anchors,
                 'total_chunks_scanned': len(chunks),
                 'top_hits': [
                     {

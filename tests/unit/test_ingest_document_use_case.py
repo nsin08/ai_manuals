@@ -8,6 +8,7 @@ from packages.application.use_cases.ingest_document import (
 )
 from packages.domain.models import Chunk
 from packages.ports.chunk_store_port import ChunkStorePort
+from packages.ports.embedding_port import EmbeddingPort
 from packages.ports.ocr_port import OcrPort
 from packages.ports.pdf_parser_port import ParsedPdfPage, PdfParserPort
 from packages.ports.table_extractor_port import ExtractedTable, TableExtractorPort
@@ -45,6 +46,11 @@ class InMemoryChunkStore(ChunkStorePort):
         return 'memory://chunks'
 
 
+class FakeEmbedding(EmbeddingPort):
+    def embed_text(self, text: str) -> list[float]:
+        return [float(len(text or '')), 1.0]
+
+
 
 def test_ingest_document_produces_expected_chunk_types() -> None:
     store = InMemoryChunkStore()
@@ -62,3 +68,18 @@ def test_ingest_document_produces_expected_chunk_types() -> None:
     assert result.by_type.get('table', 0) >= 1
     assert result.by_type.get('figure_caption', 0) >= 1
     assert result.by_type.get('figure_ocr', 0) >= 1
+
+
+def test_ingest_document_attaches_embeddings_when_adapter_provided() -> None:
+    store = InMemoryChunkStore()
+    ingest_document_use_case(
+        IngestDocumentInput(doc_id='doc-embed', pdf_path=Path('ignored.pdf')),
+        pdf_parser=FakePdfParser(),
+        ocr_adapter=FakeOcr(),
+        table_extractor=FakeTables(),
+        chunk_store=store,
+        embedding_adapter=FakeEmbedding(),
+    )
+
+    assert store.saved
+    assert any(isinstance(chunk.metadata.get('embedding'), list) for chunk in store.saved)

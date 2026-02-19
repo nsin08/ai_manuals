@@ -95,7 +95,7 @@ def test_answer_question_returns_not_found_with_closest_citations() -> None:
     )
 
     assert output.status == 'not_found'
-    assert output.answer.startswith('Not found in provided manuals')
+    assert 'Closest grounded evidence' in output.answer
     assert output.citations
 
 
@@ -114,4 +114,3 @@ def test_answer_question_triggers_single_follow_up_for_ambiguous_prompt() -> Non
     assert output.follow_up_question is not None
     assert output.follow_up_question.endswith('?')
     assert output.follow_up_question.count('?') == 1
-

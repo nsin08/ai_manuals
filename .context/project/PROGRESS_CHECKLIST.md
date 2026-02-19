@@ -90,6 +90,10 @@ Phase 3 exit criteria:
 |------|-------|--------|------|----------|
 | Streamlit upload flow implemented | Codex | done | 2026-02-18 | `apps/ui/main.py` upload panel + `POST /upload` integration |
 | Chat flow implemented with source panel | Codex | done | 2026-02-18 | `apps/ui/main.py` answer block with citation source panel |
+| UI split into Chat (`/`), Developer (`/dev`), Admin (`/admin`) with sidebar navigation and doc-scope checkboxes | Codex | done | 2026-02-18 | `apps/ui/main.py`, `apps/ui/dev_main.py`, `apps/ui/admin_main.py`, `infra/nginx/ui-router.conf`, `infra/docker-compose.yml` |
+| Query robustness tuning for basic phrasing variants (analog/analogue, meaning/description) and stricter false-positive gating | Codex | done | 2026-02-18 | `packages/adapters/retrieval/simple_keyword_search_adapter.py`, `packages/application/use_cases/answer_question.py`, `packages/application/use_cases/search_evidence.py`, `pytest tests -q` |
+| LLM answer style tuning for definitive, structured responses with citations as support | Codex | done | 2026-02-18 | `packages/adapters/llm/ollama_llm_adapter.py`, `packages/application/use_cases/search_evidence.py`, `pytest tests -q` |
+| Comparison-query handling and aggregate evidence overlap logic added to avoid false `not_found` on multi-section answers | Codex | done | 2026-02-19 | `packages/application/use_cases/answer_question.py`, `packages/application/use_cases/search_evidence.py`, `tests/unit/test_answer_question.py`, `pytest tests -q` |
 | Golden-question runner implemented | Codex | done | 2026-02-18 | `packages/application/use_cases/run_golden_evaluation.py`, `scripts/run_golden_evaluation.py` |
 | Per-question evaluation output generated | Codex | done | 2026-02-18 | `.context/reports/phase4_golden_eval_summary.json` (`results[]`) |
 | Aggregate benchmark summary generated (pass/fail + reasons) | Codex | done | 2026-02-18 | `.context/reports/phase4_golden_eval_summary.json` (`pass_rate`, `failed_questions`, `reasons`) |

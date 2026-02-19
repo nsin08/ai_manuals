@@ -11,8 +11,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from packages.adapters.answering.answer_trace_logger import AnswerTraceLogger
+from packages.adapters.embeddings.factory import create_embedding_adapter
+from packages.adapters.llm.factory import create_llm_adapter
 from packages.adapters.retrieval.filesystem_chunk_query_adapter import FilesystemChunkQueryAdapter
 from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
+from packages.adapters.retrieval.metadata_vector_search_adapter import MetadataVectorSearchAdapter
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
 from packages.application.use_cases.run_golden_evaluation import (
     RunGoldenEvaluationInput,
@@ -46,11 +49,36 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path('.context/reports/golden_eval_summary.json'),
     )
+    parser.add_argument('--use-llm-answering', action='store_true')
+    parser.add_argument('--llm-provider', default='local')
+    parser.add_argument('--llm-base-url', default='http://localhost:11434')
+    parser.add_argument('--llm-model', default='deepseek-r1:8b')
+    parser.add_argument('--embedding-provider', default='hash', help='hash|ollama')
+    parser.add_argument('--embedding-base-url', default='http://localhost:11434')
+    parser.add_argument('--embedding-model', default='mxbai-embed-large:latest')
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+
+    vector_search = HashVectorSearchAdapter()
+    if args.embedding_provider.strip().lower() == 'ollama':
+        vector_search = MetadataVectorSearchAdapter(
+            create_embedding_adapter(
+                provider='ollama',
+                base_url=args.embedding_base_url,
+                model=args.embedding_model,
+            )
+        )
+
+    llm = None
+    if args.use_llm_answering:
+        llm = create_llm_adapter(
+            provider=args.llm_provider,
+            base_url=args.llm_base_url,
+            model=args.llm_model,
+        )
 
     output = run_golden_evaluation_use_case(
         RunGoldenEvaluationInput(
@@ -62,8 +90,9 @@ def main() -> int:
         ),
         chunk_query=FilesystemChunkQueryAdapter(args.assets_dir),
         keyword_search=SimpleKeywordSearchAdapter(),
-        vector_search=HashVectorSearchAdapter(),
+        vector_search=vector_search,
         trace_logger=AnswerTraceLogger(args.trace_file),
+        llm=llm,
     )
 
     payload = {
