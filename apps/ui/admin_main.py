@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 import urllib.error
 import urllib.parse
 
@@ -9,10 +10,12 @@ import streamlit as st
 from common import build_multipart_payload, request_json
 
 
-st.set_page_config(page_title='Admin - Equipment Manuals', page_icon='🛠️', layout='wide')
+st.set_page_config(page_title='Admin - Equipment Manuals', layout='wide')
 
 default_api_base_url = os.getenv('API_BASE_URL', 'http://api:8000')
 api_base_url = st.sidebar.text_input('API Base URL', value=default_api_base_url)
+ingest_timeout_seconds = int(os.getenv('INGEST_TIMEOUT_SECONDS', '1800'))
+status_poll_seconds = int(os.getenv('JOB_POLL_SECONDS', '2'))
 
 st.sidebar.markdown('### Navigation')
 st.sidebar.markdown('- [Chat](/)')
@@ -21,6 +24,53 @@ st.sidebar.markdown('- **Admin** (`/admin`)')
 
 st.title('Admin Console')
 st.caption('Operate ingestion lifecycle: upload, ingest, delete, and inspect status/statistics.')
+
+if 'active_job_id' not in st.session_state:
+    st.session_state.active_job_id = ''
+
+
+def _render_job_status(job_payload: dict[str, object]) -> None:
+    status = str(job_payload.get('status') or 'unknown')
+    stage = str(job_payload.get('stage') or '-')
+    message = str(job_payload.get('message') or '')
+    processed = int(job_payload.get('processed_pages') or 0)
+    total = int(job_payload.get('total_pages') or 0)
+
+    st.subheader('Active Job')
+    st.caption(f"Job ID: {job_payload.get('job_id')}")
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric('Status', status)
+    m2.metric('Stage', stage)
+    m3.metric('Progress', f'{processed}/{total}' if total > 0 else str(processed))
+
+    if total > 0:
+        st.progress(min(max(processed / total, 0.0), 1.0))
+
+    if message:
+        st.info(message)
+
+    if status == 'failed':
+        st.error(str(job_payload.get('error') or 'Unknown error'))
+
+    if status == 'completed' and isinstance(job_payload.get('result'), dict):
+        st.success('Job completed.')
+        st.json(job_payload.get('result'))
+
+
+job_payload: dict[str, object] | None = None
+active_job_id = str(st.session_state.get('active_job_id') or '')
+if active_job_id:
+    try:
+        job_payload = request_json(f'{api_base_url}/jobs/{active_job_id}', timeout=30)
+        _render_job_status(job_payload)
+        if str(job_payload.get('status') or '') in {'queued', 'running'}:
+            time.sleep(max(status_poll_seconds, 1))
+            st.rerun()
+    except urllib.error.HTTPError as exc:
+        st.error(f'Failed to fetch job status: HTTP {exc.code}')
+    except urllib.error.URLError as exc:
+        st.error(f'Failed to fetch job status: {exc}')
 
 col_a, col_b = st.columns([1, 1])
 
@@ -44,20 +94,26 @@ with col_a:
                     fields=fields,
                 )
                 payload = request_json(
-                    f'{api_base_url}/upload',
+                    f'{api_base_url}/jobs/upload',
                     method='POST',
                     data=payload_bytes,
                     headers={
                         'Content-Type': content_type,
                         'Content-Length': str(len(payload_bytes)),
                     },
-                    timeout=360,
+                    timeout=ingest_timeout_seconds,
                 )
-                st.success('Upload + ingestion completed.')
-                st.json(payload)
+                st.session_state.active_job_id = str(payload.get('job_id') or '')
+                st.success(f"Started upload job: {st.session_state.active_job_id}")
+                st.rerun()
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode('utf-8', errors='replace')
                 st.error(f'Upload failed: HTTP {exc.code} - {body}')
+            except TimeoutError:
+                st.error(
+                    'Upload timed out while sending file to API. '
+                    f'Increase INGEST_TIMEOUT_SECONDS (current: {ingest_timeout_seconds}).'
+                )
             except urllib.error.URLError as exc:
                 st.error(f'Upload request failed: {exc}')
 
@@ -82,14 +138,23 @@ with col_a:
         else:
             try:
                 encoded = urllib.parse.quote(catalog_doc_id, safe='')
-                payload = request_json(f'{api_base_url}/ingest/{encoded}', method='POST', timeout=360)
-                st.success('Catalog ingestion completed.')
-                st.json(payload)
+                payload = request_json(
+                    f'{api_base_url}/jobs/ingest/{encoded}',
+                    method='POST',
+                    timeout=60,
+                )
+                st.session_state.active_job_id = str(payload.get('job_id') or '')
+                st.success(f"Started catalog ingestion job: {st.session_state.active_job_id}")
+                st.rerun()
             except urllib.error.HTTPError as exc:
                 body = exc.read().decode('utf-8', errors='replace')
                 st.error(f'Ingestion failed: HTTP {exc.code} - {body}')
             except urllib.error.URLError as exc:
                 st.error(f'Ingestion request failed: {exc}')
+
+    if st.button('Clear Active Job'):
+        st.session_state.active_job_id = ''
+        st.rerun()
 
 with col_b:
     st.subheader('Ingested Documents')
@@ -142,3 +207,26 @@ with col_b:
                     if row.get('doc_id')
                 }
             )
+
+st.subheader('Recent Jobs')
+try:
+    jobs_payload = request_json(f'{api_base_url}/jobs?limit=20', timeout=30)
+    jobs = jobs_payload.get('jobs') or []
+    if jobs:
+        table_rows = [
+            {
+                'job_id': row.get('job_id'),
+                'kind': row.get('kind'),
+                'doc_id': row.get('doc_id'),
+                'status': row.get('status'),
+                'stage': row.get('stage'),
+                'processed_pages': row.get('processed_pages'),
+                'total_pages': row.get('total_pages'),
+                'updated_at': row.get('updated_at'),
+            }
+            for row in jobs
+            if isinstance(row, dict)
+        ]
+        st.dataframe(table_rows, use_container_width=True)
+except urllib.error.URLError as exc:
+    st.info(f'Jobs API unavailable: {exc}')

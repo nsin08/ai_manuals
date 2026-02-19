@@ -12,6 +12,6 @@ def create_embedding_adapter(
     model: str,
 ) -> EmbeddingPort:
     normalized = provider.strip().lower()
-    if normalized == 'ollama' and model.strip():
+    if normalized in {'ollama', 'local'} and model.strip():
         return OllamaEmbeddingAdapter(base_url=base_url, model=model)
     return NoopEmbeddingAdapter()

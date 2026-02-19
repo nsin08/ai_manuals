@@ -89,6 +89,7 @@ for row in doc_rows:
 st.session_state['selected_doc_ids'] = selected_doc_ids
 
 evidence_depth = st.sidebar.slider('Evidence Depth', min_value=1, max_value=20, value=8)
+rerank_pool_size = st.sidebar.slider('Rerank Pool', min_value=0, max_value=60, value=24)
 st.sidebar.caption(
     'Higher evidence depth retrieves more chunks before answer generation. '
     'Use 6-10 for most manuals.'
@@ -151,6 +152,7 @@ if prompt:
     params = {
         'q': prompt,
         'top_n': str(evidence_depth),
+        'rerank_pool_size': str(rerank_pool_size),
     }
     if selected_doc_ids:
         params['doc_ids'] = ','.join(selected_doc_ids)
@@ -162,6 +164,7 @@ if prompt:
         )
         answer_text = str(payload.get('answer') or '')
         status = str(payload.get('status') or 'unknown')
+        confidence = str(payload.get('confidence') or 'unknown')
         warnings = payload.get('warnings') or []
         follow_up = payload.get('follow_up_question')
         citations = payload.get('citations') or []
@@ -172,6 +175,7 @@ if prompt:
         if warnings:
             assistant_lines.append('\nWarnings:')
             assistant_lines.extend([f'- {w}' for w in warnings])
+        assistant_lines.append(f'\nConfidence: `{confidence}`')
         if status != 'ok':
             assistant_lines.append(f'\nStatus: `{status}`')
         assistant_text = '\n'.join(assistant_lines)

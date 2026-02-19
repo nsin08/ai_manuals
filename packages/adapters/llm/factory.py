@@ -12,6 +12,6 @@ def create_llm_adapter(
     model: str,
 ) -> LlmPort:
     normalized = provider.strip().lower()
-    if normalized == 'local' and model.strip():
+    if normalized in {'local', 'ollama'} and model.strip():
         return OllamaLlmAdapter(base_url=base_url, model=model)
     return NoopLlmAdapter()
