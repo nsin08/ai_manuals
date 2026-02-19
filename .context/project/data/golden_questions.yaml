@@ -1,12 +1,14 @@
-﻿meta:
-  version: "1.0"
+meta:
+  version: "2.0"
   scoring:
     must_have:
       - "answer includes doc + page citation"
       - "answer is grounded in retrieved evidence (no hallucination)"
+      - "expected answer keywords are matched for each question"
     bonus:
       - "figure/table id cited when relevant"
-      - "diagram/table correctly interpreted"
+      - "multi-turn questions handled with coherent step sequencing"
+      - "multimodal questions reference both textual and visual evidence"
   docs:
     navfac_generator_manual: "NAVFAC - Auxiliary Generators O&M manual (PDF)"
     neets_module_4: "NEETS Module 4 - wiring/schematics training (PDF)"
@@ -16,192 +18,1725 @@
     timken_bearing_setting: "Timken tapered roller bearing setting techniques (PDF)"
 
 questions:
-  # --- NAVFAC Auxiliary Generators (O&M / troubleshooting / procedures) ---
-  - id: NAV-01
+  - id: NAV-001
     doc: navfac_generator_manual
-    intent: troubleshooting
+    intent: reference
     evidence: text
-    question: "Generator will not start. What are the recommended troubleshooting checks in order (fuel, controls, safety devices, etc.)?"
-  - id: NAV-02
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "What is the primary purpose of this manual and what equipment/process does it cover?"
+    expected_keywords:
+      - "generator"
+      - "auxiliary"
+      - "startup"
+    min_keyword_hits: 1
+  - id: NAV-002
     doc: navfac_generator_manual
-    intent: procedure
+    intent: reference
     evidence: text
-    question: "What is the step-by-step procedure to safely shut down the generator and place it out of service?"
-  - id: NAV-03
-    doc: navfac_generator_manual
-    intent: maintenance
-    evidence: table
-    question: "Find the maintenance interval schedule (daily/weekly/monthly/etc.). Summarize the key tasks and intervals."
-  - id: NAV-04
-    doc: navfac_generator_manual
-    intent: troubleshooting
-    evidence: text
-    question: "Generator starts but has low output voltage. What causes are listed and what corrective actions are recommended?"
-  - id: NAV-05
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Identify the main subsystems/components described and their roles in operation."
+    expected_keywords:
+      - "generator"
+      - "auxiliary"
+      - "startup"
+    min_keyword_hits: 1
+  - id: NAV-003
     doc: navfac_generator_manual
     intent: safety
     evidence: text
-    question: "What safety warnings/precautions are specified for maintenance (e.g., lockout/tagout, electrical hazards, rotating parts)?"
-
-  # --- NEETS Module 4 (wiring + schematic reading; good for OCR/scanned) ---
-  - id: NEE-01
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "List key safety cautions that appear before operation or maintenance tasks."
+    expected_keywords:
+      - "safety"
+      - "lockout"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 1
+  - id: NAV-004
+    doc: navfac_generator_manual
+    intent: commissioning
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Where is the startup or commissioning guidance, and what are the first checks?"
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 1
+  - id: NAV-005
+    doc: navfac_generator_manual
+    intent: procedure
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Summarize the normal operating sequence in concise ordered steps."
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 1
+  - id: NAV-006
+    doc: navfac_generator_manual
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: table
+    turn_count: 1
+    question: "Find one table with specifications/settings and summarize the most important fields."
+    expected_keywords:
+      - "generator"
+      - "auxiliary"
+      - "startup"
+    min_keyword_hits: 1
+  - id: NAV-007
+    doc: navfac_generator_manual
+    intent: reference
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What configuration parameters/settings are emphasized and why are they important?"
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 1
+  - id: NAV-008
+    doc: navfac_generator_manual
+    intent: troubleshooting
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What common fault/alert conditions are described, and what is one corrective action?"
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 1
+  - id: NAV-009
+    doc: navfac_generator_manual
+    intent: procedure
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 3
+    question: "Step 1: identify prerequisites before setup. Step 2: provide setup sequence. Step 3: explain how to verify success."
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 2
+  - id: NAV-010
+    doc: navfac_generator_manual
+    intent: installation
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "First summarize installation requirements. Then list what can fail if each requirement is ignored."
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 2
+  - id: NAV-011
+    doc: navfac_generator_manual
+    intent: troubleshooting
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "If a user reports unstable operation, what investigation order is recommended and why?"
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 2
+  - id: NAV-012
+    doc: navfac_generator_manual
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "Compare two operating modes/strategies mentioned in the manual and explain when each should be used."
+    expected_keywords:
+      - "generator"
+      - "auxiliary"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NAV-013
+    doc: navfac_generator_manual
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 3
+    question: "Build a troubleshooting decision path: symptom -> checks -> action -> verification."
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 2
+  - id: NAV-014
+    doc: navfac_generator_manual
+    intent: maintenance
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    question: "Extract maintenance workflow as a two-cycle plan: immediate checks and periodic checks."
+    expected_keywords:
+      - "startup"
+      - "commissioning"
+      - "generator"
+    min_keyword_hits: 2
+  - id: NAV-015
+    doc: navfac_generator_manual
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use any figure and nearby text to explain component relationships and signal/flow direction."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NAV-016
+    doc: navfac_generator_manual
+    intent: integration
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use a diagram and a table together to explain wiring/connection or dimension constraints."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NAV-017
+    doc: navfac_generator_manual
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Find a visual reference and describe how labels map to actionable steps."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NAV-018
+    doc: navfac_generator_manual
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Cross-reference figure callouts with procedure text and summarize an end-to-end task."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NAV-019
+    doc: navfac_generator_manual
+    intent: reference
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "If a dimension/terminal/code appears in a table and diagram, reconcile both and explain operator impact."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NAV-020
+    doc: navfac_generator_manual
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Create a concise operator playbook combining text guidance, one table insight, and one diagram insight."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "generator"
+      - "startup"
+    min_keyword_hits: 2
+  - id: NEE-001
     doc: neets_module_4
     intent: reference
     evidence: text
-    question: "Explain the difference between series and parallel circuits and how they appear in schematic diagrams."
-  - id: NEE-02
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "What is the primary purpose of this manual and what equipment/process does it cover?"
+    expected_keywords:
+      - "circuit"
+      - "schematic"
+      - "troubleshooting"
+    min_keyword_hits: 1
+  - id: NEE-002
     doc: neets_module_4
     intent: reference
-    evidence: table
-    question: "Locate the section/table explaining American Wire Gauge (AWG) or conductor sizing. What does the table say about gauge vs capacity/diameter?"
-  - id: NEE-03
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Identify the main subsystems/components described and their roles in operation."
+    expected_keywords:
+      - "circuit"
+      - "schematic"
+      - "troubleshooting"
+    min_keyword_hits: 1
+  - id: NEE-003
+    doc: neets_module_4
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "List key safety cautions that appear before operation or maintenance tasks."
+    expected_keywords:
+      - "electrical"
+      - "safety"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 1
+  - id: NEE-004
+    doc: neets_module_4
+    intent: commissioning
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Where is the startup or commissioning guidance, and what are the first checks?"
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 1
+  - id: NEE-005
     doc: neets_module_4
     intent: procedure
     evidence: text
-    question: "What are the recommended steps/techniques for making reliable wire splices or terminations?"
-  - id: NEE-04
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Summarize the normal operating sequence in concise ordered steps."
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 1
+  - id: NEE-006
+    doc: neets_module_4
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: table
+    turn_count: 1
+    question: "Find one table with specifications/settings and summarize the most important fields."
+    expected_keywords:
+      - "circuit"
+      - "schematic"
+      - "troubleshooting"
+    min_keyword_hits: 1
+  - id: NEE-007
+    doc: neets_module_4
+    intent: reference
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What configuration parameters/settings are emphasized and why are they important?"
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 1
+  - id: NEE-008
+    doc: neets_module_4
+    intent: troubleshooting
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What common fault/alert conditions are described, and what is one corrective action?"
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 1
+  - id: NEE-009
+    doc: neets_module_4
+    intent: procedure
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 3
+    question: "Step 1: identify prerequisites before setup. Step 2: provide setup sequence. Step 3: explain how to verify success."
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 2
+  - id: NEE-010
+    doc: neets_module_4
+    intent: installation
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "First summarize installation requirements. Then list what can fail if each requirement is ignored."
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 2
+  - id: NEE-011
+    doc: neets_module_4
+    intent: troubleshooting
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "If a user reports unstable operation, what investigation order is recommended and why?"
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 2
+  - id: NEE-012
+    doc: neets_module_4
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "Compare two operating modes/strategies mentioned in the manual and explain when each should be used."
+    expected_keywords:
+      - "circuit"
+      - "schematic"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: NEE-013
+    doc: neets_module_4
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 3
+    question: "Build a troubleshooting decision path: symptom -> checks -> action -> verification."
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 2
+  - id: NEE-014
+    doc: neets_module_4
+    intent: maintenance
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    question: "Extract maintenance workflow as a two-cycle plan: immediate checks and periodic checks."
+    expected_keywords:
+      - "troubleshooting"
+      - "measurement"
+      - "circuit"
+    min_keyword_hits: 2
+  - id: NEE-015
+    doc: neets_module_4
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use any figure and nearby text to explain component relationships and signal/flow direction."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: NEE-016
+    doc: neets_module_4
+    intent: integration
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use a diagram and a table together to explain wiring/connection or dimension constraints."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: NEE-017
+    doc: neets_module_4
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Find a visual reference and describe how labels map to actionable steps."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: NEE-018
+    doc: neets_module_4
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Cross-reference figure callouts with procedure text and summarize an end-to-end task."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: NEE-019
     doc: neets_module_4
     intent: reference
     evidence: diagram
-    question: "Find an example schematic diagram in the module and explain how to trace signal/power flow through it."
-  - id: NEE-05
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "If a dimension/terminal/code appears in a table and diagram, reconcile both and explain operator impact."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: NEE-020
     doc: neets_module_4
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Create a concise operator playbook combining text guidance, one table insight, and one diagram insight."
+    expected_keywords:
+      - "wiring"
+      - "diagram"
+      - "circuit"
+      - "troubleshooting"
+    min_keyword_hits: 2
+  - id: GRU-001
+    doc: grundfos_seg_manual
     intent: reference
     evidence: text
-    question: "What guidance is provided on reading schematic symbols and identifying components from symbol notation?"
-
-  # --- Grundfos SEG manual (installation, fault finding, dimensions) ---
-  - id: GRU-01
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "What is the primary purpose of this manual and what equipment/process does it cover?"
+    expected_keywords:
+      - "pump"
+      - "seg"
+      - "commissioning"
+    min_keyword_hits: 1
+  - id: GRU-002
+    doc: grundfos_seg_manual
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Identify the main subsystems/components described and their roles in operation."
+    expected_keywords:
+      - "pump"
+      - "seg"
+      - "commissioning"
+    min_keyword_hits: 1
+  - id: GRU-003
+    doc: grundfos_seg_manual
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "List key safety cautions that appear before operation or maintenance tasks."
+    expected_keywords:
+      - "warning"
+      - "hazard"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 1
+  - id: GRU-004
     doc: grundfos_seg_manual
     intent: commissioning
     evidence: text
-    question: "What are the pre-start checks and start-up/commissioning steps recommended after installation?"
-  - id: GRU-02
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Where is the startup or commissioning guidance, and what are the first checks?"
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 1
+  - id: GRU-005
     doc: grundfos_seg_manual
-    intent: electrical
-    evidence: diagram
-    question: "Locate the electrical connection/wiring diagram. List the terminals/connections and their purpose as described."
-  - id: GRU-03
-    doc: grundfos_seg_manual
-    intent: troubleshooting
-    evidence: table
-    question: "Find the fault finding / troubleshooting table. Pick 3 common faults and summarize causes + remedies."
-  - id: GRU-04
-    doc: grundfos_seg_manual
-    intent: maintenance
+    intent: procedure
     evidence: text
-    question: "What routine maintenance tasks are specified and what cautions are mentioned (seals, lubrication, inspections)?"
-  - id: GRU-05
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Summarize the normal operating sequence in concise ordered steps."
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 1
+  - id: GRU-006
     doc: grundfos_seg_manual
     intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: table
+    turn_count: 1
+    question: "Find one table with specifications/settings and summarize the most important fields."
+    expected_keywords:
+      - "pump"
+      - "seg"
+      - "commissioning"
+    min_keyword_hits: 1
+  - id: GRU-007
+    doc: grundfos_seg_manual
+    intent: reference
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What configuration parameters/settings are emphasized and why are they important?"
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 1
+  - id: GRU-008
+    doc: grundfos_seg_manual
+    intent: troubleshooting
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What common fault/alert conditions are described, and what is one corrective action?"
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 1
+  - id: GRU-009
+    doc: grundfos_seg_manual
+    intent: procedure
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 3
+    question: "Step 1: identify prerequisites before setup. Step 2: provide setup sequence. Step 3: explain how to verify success."
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 2
+  - id: GRU-010
+    doc: grundfos_seg_manual
+    intent: installation
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "First summarize installation requirements. Then list what can fail if each requirement is ignored."
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 2
+  - id: GRU-011
+    doc: grundfos_seg_manual
+    intent: troubleshooting
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "If a user reports unstable operation, what investigation order is recommended and why?"
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 2
+  - id: GRU-012
+    doc: grundfos_seg_manual
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "Compare two operating modes/strategies mentioned in the manual and explain when each should be used."
+    expected_keywords:
+      - "pump"
+      - "seg"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: GRU-013
+    doc: grundfos_seg_manual
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 3
+    question: "Build a troubleshooting decision path: symptom -> checks -> action -> verification."
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 2
+  - id: GRU-014
+    doc: grundfos_seg_manual
+    intent: maintenance
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    question: "Extract maintenance workflow as a two-cycle plan: immediate checks and periodic checks."
+    expected_keywords:
+      - "commissioning"
+      - "maintenance"
+      - "pump"
+    min_keyword_hits: 2
+  - id: GRU-015
+    doc: grundfos_seg_manual
+    intent: diagram
     evidence: diagram
-    question: "Find the dimensional drawing. What key installation dimensions/clearances are specified, and where are they shown?"
-
-  # --- Siemens SINAMICS G120 Basic Positioner (commissioning, parameters, alarms) ---
-  - id: SIE-01
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use any figure and nearby text to explain component relationships and signal/flow direction."
+    expected_keywords:
+      - "wiring"
+      - "terminal"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: GRU-016
+    doc: grundfos_seg_manual
+    intent: integration
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use a diagram and a table together to explain wiring/connection or dimension constraints."
+    expected_keywords:
+      - "wiring"
+      - "terminal"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: GRU-017
+    doc: grundfos_seg_manual
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Find a visual reference and describe how labels map to actionable steps."
+    expected_keywords:
+      - "wiring"
+      - "terminal"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: GRU-018
+    doc: grundfos_seg_manual
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Cross-reference figure callouts with procedure text and summarize an end-to-end task."
+    expected_keywords:
+      - "wiring"
+      - "terminal"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: GRU-019
+    doc: grundfos_seg_manual
+    intent: reference
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "If a dimension/terminal/code appears in a table and diagram, reconcile both and explain operator impact."
+    expected_keywords:
+      - "wiring"
+      - "terminal"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: GRU-020
+    doc: grundfos_seg_manual
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Create a concise operator playbook combining text guidance, one table insight, and one diagram insight."
+    expected_keywords:
+      - "wiring"
+      - "terminal"
+      - "pump"
+      - "commissioning"
+    min_keyword_hits: 2
+  - id: SIE-001
+    doc: siemens_g120_basic_positioner
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "What is the primary purpose of this manual and what equipment/process does it cover?"
+    expected_keywords:
+      - "sinamics"
+      - "g120"
+      - "homing"
+    min_keyword_hits: 1
+  - id: SIE-002
+    doc: siemens_g120_basic_positioner
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Identify the main subsystems/components described and their roles in operation."
+    expected_keywords:
+      - "sinamics"
+      - "g120"
+      - "homing"
+    min_keyword_hits: 1
+  - id: SIE-003
+    doc: siemens_g120_basic_positioner
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "List key safety cautions that appear before operation or maintenance tasks."
+    expected_keywords:
+      - "limit"
+      - "alarm"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 1
+  - id: SIE-004
     doc: siemens_g120_basic_positioner
     intent: commissioning
     evidence: text
-    question: "What is the recommended commissioning workflow to enable and verify the Basic Positioner function?"
-  - id: SIE-02
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Where is the startup or commissioning guidance, and what are the first checks?"
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 1
+  - id: SIE-005
     doc: siemens_g120_basic_positioner
     intent: procedure
     evidence: text
-    question: "What steps are described for homing/reference point setup (how the axis establishes a known position)?"
-  - id: SIE-03
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Summarize the normal operating sequence in concise ordered steps."
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 1
+  - id: SIE-006
+    doc: siemens_g120_basic_positioner
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: table
+    turn_count: 1
+    question: "Find one table with specifications/settings and summarize the most important fields."
+    expected_keywords:
+      - "sinamics"
+      - "g120"
+      - "homing"
+    min_keyword_hits: 1
+  - id: SIE-007
     doc: siemens_g120_basic_positioner
     intent: reference
     evidence: table
-    question: "Find the parameter list/table relevant to positioning (key parameters). Summarize parameter names/IDs and what they control."
-  - id: SIE-04
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What configuration parameters/settings are emphasized and why are they important?"
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 1
+  - id: SIE-008
+    doc: siemens_g120_basic_positioner
+    intent: troubleshooting
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What common fault/alert conditions are described, and what is one corrective action?"
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 1
+  - id: SIE-009
+    doc: siemens_g120_basic_positioner
+    intent: procedure
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 3
+    question: "Step 1: identify prerequisites before setup. Step 2: provide setup sequence. Step 3: explain how to verify success."
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 2
+  - id: SIE-010
+    doc: siemens_g120_basic_positioner
+    intent: installation
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "First summarize installation requirements. Then list what can fail if each requirement is ignored."
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 2
+  - id: SIE-011
     doc: siemens_g120_basic_positioner
     intent: troubleshooting
     evidence: text
-    question: "Identify the documented faults/alarms related to positioning. What are the recommended operator actions?"
-  - id: SIE-05
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "If a user reports unstable operation, what investigation order is recommended and why?"
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 2
+  - id: SIE-012
+    doc: siemens_g120_basic_positioner
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "Compare two operating modes/strategies mentioned in the manual and explain when each should be used."
+    expected_keywords:
+      - "sinamics"
+      - "g120"
+      - "homing"
+    min_keyword_hits: 2
+  - id: SIE-013
+    doc: siemens_g120_basic_positioner
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 3
+    question: "Build a troubleshooting decision path: symptom -> checks -> action -> verification."
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 2
+  - id: SIE-014
+    doc: siemens_g120_basic_positioner
+    intent: maintenance
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    question: "Extract maintenance workflow as a two-cycle plan: immediate checks and periodic checks."
+    expected_keywords:
+      - "homing"
+      - "commissioning"
+      - "sinamics"
+    min_keyword_hits: 2
+  - id: SIE-015
+    doc: siemens_g120_basic_positioner
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use any figure and nearby text to explain component relationships and signal/flow direction."
+    expected_keywords:
+      - "setpoint"
+      - "feedback"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 2
+  - id: SIE-016
     doc: siemens_g120_basic_positioner
     intent: integration
     evidence: diagram
-    question: "Locate a block diagram or signal interface diagram. Explain the signal flow (setpoint, feedback, enable, fault) using the diagram."
-
-  # --- Rockwell PowerFlex 40 (wiring, parameters, dimensions, faults) ---
-  - id: ROC-01
-    doc: rockwell_powerflex_40
-    intent: installation
-    evidence: text
-    question: "What installation/environment requirements are specified (mounting, ventilation, temperature, clearance)?"
-  - id: ROC-02
-    doc: rockwell_powerflex_40
-    intent: electrical
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use a diagram and a table together to explain wiring/connection or dimension constraints."
+    expected_keywords:
+      - "setpoint"
+      - "feedback"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 2
+  - id: SIE-017
+    doc: siemens_g120_basic_positioner
+    intent: diagram
     evidence: diagram
-    question: "Find the control terminal wiring diagram. What are the terminals and what functions do they support?"
-  - id: ROC-03
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Find a visual reference and describe how labels map to actionable steps."
+    expected_keywords:
+      - "setpoint"
+      - "feedback"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 2
+  - id: SIE-018
+    doc: siemens_g120_basic_positioner
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Cross-reference figure callouts with procedure text and summarize an end-to-end task."
+    expected_keywords:
+      - "setpoint"
+      - "feedback"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 2
+  - id: SIE-019
+    doc: siemens_g120_basic_positioner
+    intent: reference
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "If a dimension/terminal/code appears in a table and diagram, reconcile both and explain operator impact."
+    expected_keywords:
+      - "setpoint"
+      - "feedback"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 2
+  - id: SIE-020
+    doc: siemens_g120_basic_positioner
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Create a concise operator playbook combining text guidance, one table insight, and one diagram insight."
+    expected_keywords:
+      - "setpoint"
+      - "feedback"
+      - "sinamics"
+      - "homing"
+    min_keyword_hits: 2
+  - id: ROC-001
     doc: rockwell_powerflex_40
-    intent: troubleshooting
-    evidence: table
-    question: "Find the fault code table. Choose 3 faults and summarize the meaning + corrective action."
-  - id: ROC-04
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "What is the primary purpose of this manual and what equipment/process does it cover?"
+    expected_keywords:
+      - "powerflex"
+      - "drive"
+      - "startup"
+    min_keyword_hits: 1
+  - id: ROC-002
+    doc: rockwell_powerflex_40
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Identify the main subsystems/components described and their roles in operation."
+    expected_keywords:
+      - "powerflex"
+      - "drive"
+      - "startup"
+    min_keyword_hits: 1
+  - id: ROC-003
+    doc: rockwell_powerflex_40
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "List key safety cautions that appear before operation or maintenance tasks."
+    expected_keywords:
+      - "warning"
+      - "lockout"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 1
+  - id: ROC-004
     doc: rockwell_powerflex_40
     intent: commissioning
     evidence: text
-    question: "What are the basic steps to configure the drive for first run (motor data, start/stop source, speed reference)?"
-  - id: ROC-05
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Where is the startup or commissioning guidance, and what are the first checks?"
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 1
+  - id: ROC-005
+    doc: rockwell_powerflex_40
+    intent: procedure
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Summarize the normal operating sequence in concise ordered steps."
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 1
+  - id: ROC-006
     doc: rockwell_powerflex_40
     intent: spec
-    evidence: diagram
-    question: "Locate the dimensional drawing. What are the overall dimensions and mounting hole details for a specific frame size?"
-
-  # --- Timken bearing setting techniques (dimensions A/B, endplay/preload, procedures) ---
-  - id: TIM-01
-    doc: timken_bearing_setting
-    intent: concept
+    evidence: table
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: table
+    turn_count: 1
+    question: "Find one table with specifications/settings and summarize the most important fields."
+    expected_keywords:
+      - "powerflex"
+      - "drive"
+      - "startup"
+    min_keyword_hits: 1
+  - id: ROC-007
+    doc: rockwell_powerflex_40
+    intent: reference
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What configuration parameters/settings are emphasized and why are they important?"
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 1
+  - id: ROC-008
+    doc: rockwell_powerflex_40
+    intent: troubleshooting
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What common fault/alert conditions are described, and what is one corrective action?"
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 1
+  - id: ROC-009
+    doc: rockwell_powerflex_40
+    intent: procedure
     evidence: text
-    question: "Explain endplay vs preload for tapered roller bearings and why correct setting matters."
-  - id: TIM-02
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 3
+    question: "Step 1: identify prerequisites before setup. Step 2: provide setup sequence. Step 3: explain how to verify success."
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 2
+  - id: ROC-010
+    doc: rockwell_powerflex_40
+    intent: installation
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "First summarize installation requirements. Then list what can fail if each requirement is ignored."
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 2
+  - id: ROC-011
+    doc: rockwell_powerflex_40
+    intent: troubleshooting
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "If a user reports unstable operation, what investigation order is recommended and why?"
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 2
+  - id: ROC-012
+    doc: rockwell_powerflex_40
+    intent: comparison
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "Compare two operating modes/strategies mentioned in the manual and explain when each should be used."
+    expected_keywords:
+      - "powerflex"
+      - "drive"
+      - "startup"
+    min_keyword_hits: 2
+  - id: ROC-013
+    doc: rockwell_powerflex_40
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 3
+    question: "Build a troubleshooting decision path: symptom -> checks -> action -> verification."
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 2
+  - id: ROC-014
+    doc: rockwell_powerflex_40
+    intent: maintenance
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    question: "Extract maintenance workflow as a two-cycle plan: immediate checks and periodic checks."
+    expected_keywords:
+      - "startup"
+      - "configuration"
+      - "powerflex"
+    min_keyword_hits: 2
+  - id: ROC-015
+    doc: rockwell_powerflex_40
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use any figure and nearby text to explain component relationships and signal/flow direction."
+    expected_keywords:
+      - "terminal"
+      - "wiring"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 2
+  - id: ROC-016
+    doc: rockwell_powerflex_40
+    intent: integration
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use a diagram and a table together to explain wiring/connection or dimension constraints."
+    expected_keywords:
+      - "terminal"
+      - "wiring"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 2
+  - id: ROC-017
+    doc: rockwell_powerflex_40
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Find a visual reference and describe how labels map to actionable steps."
+    expected_keywords:
+      - "terminal"
+      - "wiring"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 2
+  - id: ROC-018
+    doc: rockwell_powerflex_40
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Cross-reference figure callouts with procedure text and summarize an end-to-end task."
+    expected_keywords:
+      - "terminal"
+      - "wiring"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 2
+  - id: ROC-019
+    doc: rockwell_powerflex_40
+    intent: reference
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "If a dimension/terminal/code appears in a table and diagram, reconcile both and explain operator impact."
+    expected_keywords:
+      - "terminal"
+      - "wiring"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 2
+  - id: ROC-020
+    doc: rockwell_powerflex_40
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Create a concise operator playbook combining text guidance, one table insight, and one diagram insight."
+    expected_keywords:
+      - "terminal"
+      - "wiring"
+      - "powerflex"
+      - "startup"
+    min_keyword_hits: 2
+  - id: TIM-001
+    doc: timken_bearing_setting
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "What is the primary purpose of this manual and what equipment/process does it cover?"
+    expected_keywords:
+      - "timken"
+      - "bearing"
+      - "torque-set"
+    min_keyword_hits: 1
+  - id: TIM-002
+    doc: timken_bearing_setting
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Identify the main subsystems/components described and their roles in operation."
+    expected_keywords:
+      - "timken"
+      - "bearing"
+      - "torque-set"
+    min_keyword_hits: 1
+  - id: TIM-003
+    doc: timken_bearing_setting
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "List key safety cautions that appear before operation or maintenance tasks."
+    expected_keywords:
+      - "inspection"
+      - "risk"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 1
+  - id: TIM-004
+    doc: timken_bearing_setting
+    intent: commissioning
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Where is the startup or commissioning guidance, and what are the first checks?"
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 1
+  - id: TIM-005
     doc: timken_bearing_setting
     intent: procedure
     evidence: text
-    question: "What methods are described for setting bearings (e.g., spacer method, torque-turn, direct measurement)? Summarize steps for one method."
-  - id: TIM-03
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    question: "Summarize the normal operating sequence in concise ordered steps."
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 1
+  - id: TIM-006
     doc: timken_bearing_setting
-    intent: diagram
-    evidence: diagram
-    question: "Find the figure showing dimensions labeled A and B. What do A and B represent in the setup?"
-  - id: TIM-04
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: table
+    turn_count: 1
+    question: "Find one table with specifications/settings and summarize the most important fields."
+    expected_keywords:
+      - "timken"
+      - "bearing"
+      - "torque-set"
+    min_keyword_hits: 1
+  - id: TIM-007
     doc: timken_bearing_setting
-    intent: calculation
+    intent: reference
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What configuration parameters/settings are emphasized and why are they important?"
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 1
+  - id: TIM-008
+    doc: timken_bearing_setting
+    intent: troubleshooting
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    question: "What common fault/alert conditions are described, and what is one corrective action?"
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 1
+  - id: TIM-009
+    doc: timken_bearing_setting
+    intent: procedure
     evidence: text
-    question: "Where the brochure describes calculating spacer/shim thickness, what is the described calculation approach (inputs and output)?"
-  - id: TIM-05
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 3
+    question: "Step 1: identify prerequisites before setup. Step 2: provide setup sequence. Step 3: explain how to verify success."
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 2
+  - id: TIM-010
+    doc: timken_bearing_setting
+    intent: installation
+    evidence: text
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "First summarize installation requirements. Then list what can fail if each requirement is ignored."
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 2
+  - id: TIM-011
     doc: timken_bearing_setting
     intent: troubleshooting
     evidence: text
-    question: "What symptoms/risks are associated with incorrect bearing setting (too much preload or too much endplay), and what corrective guidance is provided?"
-
-  # --- Cross-document / ambiguity handling (tests follow-up question behavior) ---
-  - id: XDOC-01
-    doc: multiple
-    intent: disambiguation
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "If a user reports unstable operation, what investigation order is recommended and why?"
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 2
+  - id: TIM-012
+    doc: timken_bearing_setting
+    intent: comparison
     evidence: text
-    question: "What does 'commissioning' mean in the context of these manuals, and what common commissioning steps appear across different equipment?"
-  - id: XDOC-02
-    doc: multiple
-    intent: retrieval
-    evidence: table
-    question: "Across the manuals, find an example of a maintenance interval table/schedule and summarize it with citations."
-  - id: XDOC-03
-    doc: multiple
+    question_type: multi_turn
+    difficulty: medium
+    rag_mode: text
+    turn_count: 2
+    question: "Compare two operating modes/strategies mentioned in the manual and explain when each should be used."
+    expected_keywords:
+      - "timken"
+      - "bearing"
+      - "torque-set"
+    min_keyword_hits: 2
+  - id: TIM-013
+    doc: timken_bearing_setting
     intent: troubleshooting
     evidence: table
-    question: "Find one troubleshooting table in any manual and extract a specific fault -> cause -> remedy row with citation."
-  - id: XDOC-04
-    doc: multiple
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 3
+    question: "Build a troubleshooting decision path: symptom -> checks -> action -> verification."
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 2
+  - id: TIM-014
+    doc: timken_bearing_setting
+    intent: maintenance
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    question: "Extract maintenance workflow as a two-cycle plan: immediate checks and periodic checks."
+    expected_keywords:
+      - "torque-set"
+      - "preset"
+      - "timken"
+    min_keyword_hits: 2
+  - id: TIM-015
+    doc: timken_bearing_setting
     intent: diagram
     evidence: diagram
-    question: "Find a wiring/schematic diagram in any document and explain how to interpret terminal/pin labels using the diagram."
-  - id: XDOC-05
-    doc: multiple
-    intent: follow_up_required
-    evidence: text
-    question: "My equipment trips immediately after start. What should I check first?"
-
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use any figure and nearby text to explain component relationships and signal/flow direction."
+    expected_keywords:
+      - "figure"
+      - "dimension"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 2
+  - id: TIM-016
+    doc: timken_bearing_setting
+    intent: integration
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Use a diagram and a table together to explain wiring/connection or dimension constraints."
+    expected_keywords:
+      - "figure"
+      - "dimension"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 2
+  - id: TIM-017
+    doc: timken_bearing_setting
+    intent: diagram
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 2
+    question: "Find a visual reference and describe how labels map to actionable steps."
+    expected_keywords:
+      - "figure"
+      - "dimension"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 2
+  - id: TIM-018
+    doc: timken_bearing_setting
+    intent: procedure
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Cross-reference figure callouts with procedure text and summarize an end-to-end task."
+    expected_keywords:
+      - "figure"
+      - "dimension"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 2
+  - id: TIM-019
+    doc: timken_bearing_setting
+    intent: reference
+    evidence: diagram
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "If a dimension/terminal/code appears in a table and diagram, reconcile both and explain operator impact."
+    expected_keywords:
+      - "figure"
+      - "dimension"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 2
+  - id: TIM-020
+    doc: timken_bearing_setting
+    intent: operations
+    evidence: multimodal
+    question_type: multimodal
+    difficulty: hard
+    rag_mode: multimodal
+    turn_count: 3
+    question: "Create a concise operator playbook combining text guidance, one table insight, and one diagram insight."
+    expected_keywords:
+      - "figure"
+      - "dimension"
+      - "timken"
+      - "torque-set"
+    min_keyword_hits: 2

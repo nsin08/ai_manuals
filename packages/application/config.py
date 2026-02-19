@@ -45,6 +45,13 @@ class AppConfig:
     vision_base_url: str
     vision_model: str
     vision_max_pages: int
+    use_agentic_mode: bool
+    agentic_provider: str
+    agentic_trace_file: str
+    agentic_max_iterations: int
+    agentic_max_tool_calls: int
+    agentic_timeout_seconds: float
+    include_reasoning_summary: bool
 
 
 def load_config() -> AppConfig:
@@ -86,4 +93,12 @@ def load_config() -> AppConfig:
         ),
         vision_model=_env('VISION_MODEL', 'qwen2.5vl:7b'),
         vision_max_pages=int(_env('VISION_MAX_PAGES', '40')),
+        use_agentic_mode=_env('USE_AGENTIC_MODE', 'false').strip().lower() == 'true',
+        agentic_provider=_env('AGENTIC_PROVIDER', 'langgraph'),
+        agentic_trace_file=_env('AGENTIC_TRACE_FILE', '.context/reports/agent_traces.jsonl'),
+        agentic_max_iterations=int(_env('AGENTIC_MAX_ITERATIONS', '4')),
+        agentic_max_tool_calls=int(_env('AGENTIC_MAX_TOOL_CALLS', '6')),
+        agentic_timeout_seconds=float(_env('AGENTIC_TIMEOUT_SECONDS', '20')),
+        include_reasoning_summary=_env('INCLUDE_REASONING_SUMMARY', 'false').strip().lower()
+        == 'true',
     )

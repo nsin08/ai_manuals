@@ -44,6 +44,13 @@ VISION_BASE_URL=http://host.docker.internal:11434
 VISION_MODEL=qwen2.5vl:7b
 VISION_MAX_PAGES=40
 
+USE_AGENTIC_MODE=true
+AGENTIC_PROVIDER=langgraph
+AGENTIC_MAX_ITERATIONS=4
+AGENTIC_MAX_TOOL_CALLS=6
+AGENTIC_TIMEOUT_SECONDS=20
+INCLUDE_REASONING_SUMMARY=true
+
 INGEST_CONCURRENCY=2
 INGEST_PAGE_WORKERS=4
 ```
@@ -133,7 +140,7 @@ pytest tests -q
 Run reliability evaluation:
 
 ```powershell
-python scripts/run_reliability_eval.py --use-llm-answering --llm-provider local --llm-base-url http://localhost:11434 --llm-model deepseek-r1:8b --embedding-provider ollama --embedding-base-url http://localhost:11434 --embedding-model mxbai-embed-large:latest --use-reranker --reranker-provider ollama --reranker-base-url http://localhost:11434 --reranker-model phi:latest
+python scripts/run_reliability_eval.py --use-llm-answering --llm-provider local --llm-base-url http://localhost:11434 --llm-model deepseek-r1:8b --embedding-provider ollama --embedding-base-url http://localhost:11434 --embedding-model mxbai-embed-large:latest --use-reranker --reranker-provider ollama --reranker-base-url http://localhost:11434 --reranker-model phi:latest --use-agentic-mode --agentic-provider langgraph
 ```
 
 ## 7. Reset Data

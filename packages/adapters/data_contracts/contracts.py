@@ -23,6 +23,12 @@ class GoldenQuestion:
     intent: str
     evidence: str
     question: str
+    question_type: str = "straightforward"
+    difficulty: str = "easy"
+    rag_mode: str = "text"
+    turn_count: int = 1
+    expected_keywords: list[str] = field(default_factory=list)
+    min_keyword_hits: int = 1
 
 
 @dataclass
@@ -91,6 +97,10 @@ def load_golden_questions(path: Path) -> tuple[set[str], list[GoldenQuestion]]:
         if not isinstance(row, dict):
             raise ValueError("Each golden question entry must be a mapping")
 
+        expected_keywords_raw = row.get("expected_keywords") or []
+        if not isinstance(expected_keywords_raw, list):
+            expected_keywords_raw = [expected_keywords_raw]
+
         questions.append(
             GoldenQuestion(
                 question_id=str(row.get("id", "")).strip(),
@@ -98,6 +108,12 @@ def load_golden_questions(path: Path) -> tuple[set[str], list[GoldenQuestion]]:
                 intent=str(row.get("intent", "")).strip(),
                 evidence=str(row.get("evidence", "")).strip(),
                 question=str(row.get("question", "")).strip(),
+                question_type=str(row.get("question_type", "straightforward")).strip() or "straightforward",
+                difficulty=str(row.get("difficulty", "easy")).strip() or "easy",
+                rag_mode=str(row.get("rag_mode", row.get("evidence", "text"))).strip() or "text",
+                turn_count=max(1, int(row.get("turn_count", 1) or 1)),
+                expected_keywords=[str(item).strip() for item in expected_keywords_raw if str(item).strip()],
+                min_keyword_hits=max(1, int(row.get("min_keyword_hits", 1) or 1)),
             )
         )
 

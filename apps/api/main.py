@@ -11,6 +11,13 @@ from fastapi.responses import FileResponse
 
 from apps.api.ingestion_jobs import IngestionJob, IngestionJobManager
 from packages.adapters.answering.answer_trace_logger import AnswerTraceLogger
+from packages.adapters.agentic.factory import (
+    create_agent_trace_logger,
+    create_planner_adapter,
+    create_state_graph_runner_adapter,
+    create_tool_executor_adapter,
+)
+from packages.adapters.agentic.langchain_tool_executor_adapter import LangChainToolDefinition
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
 from packages.adapters.embeddings.factory import create_embedding_adapter
 from packages.adapters.llm.factory import create_llm_adapter
@@ -39,6 +46,7 @@ from packages.application.use_cases.run_golden_evaluation import (
     run_golden_evaluation_use_case,
 )
 from packages.application.use_cases.search_evidence import (
+    EvidenceHit,
     SearchEvidenceInput,
     search_evidence_use_case,
 )
@@ -107,6 +115,97 @@ def _build_vision(cfg):
         base_url=cfg.vision_base_url,
         model=cfg.vision_model,
     )
+
+
+def _serialize_hit(hit: EvidenceHit) -> dict[str, object]:
+    return {
+        'chunk_id': hit.chunk_id,
+        'doc_id': hit.doc_id,
+        'content_type': hit.content_type,
+        'page_start': hit.page_start,
+        'page_end': hit.page_end,
+        'section_path': hit.section_path,
+        'figure_id': hit.figure_id,
+        'table_id': hit.table_id,
+        'score': hit.score,
+        'keyword_score': hit.keyword_score,
+        'vector_score': hit.vector_score,
+        'rerank_score': hit.rerank_score,
+        'snippet': hit.snippet,
+    }
+
+
+def _build_agentic_stack(
+    *,
+    cfg,
+    chunk_query,
+    reranker,
+):
+    if not cfg.use_agentic_mode:
+        return None, None, None, None
+
+    def _search_evidence_tool(arguments: dict[str, object]) -> dict[str, object]:
+        query = str(arguments.get('query') or '').strip()
+        if not query:
+            raise ValueError('query is required')
+
+        doc_id_value = arguments.get('doc_id')
+        doc_id = str(doc_id_value).strip() if doc_id_value is not None else None
+        top_n = int(arguments.get('top_n') or 6)
+        top_k_keyword = int(arguments.get('top_k_keyword') or 20)
+        top_k_vector = int(arguments.get('top_k_vector') or 20)
+        rerank_pool_size = int(arguments.get('rerank_pool_size') or cfg.reranker_pool_size)
+
+        output = search_evidence_use_case(
+            SearchEvidenceInput(
+                query=query,
+                doc_id=doc_id,
+                top_n=top_n,
+                top_k_keyword=top_k_keyword,
+                top_k_vector=top_k_vector,
+                rerank_pool_size=rerank_pool_size,
+            ),
+            chunk_query=chunk_query,
+            keyword_search=SimpleKeywordSearchAdapter(),
+            vector_search=_build_vector_search(cfg),
+            trace_logger=RetrievalTraceLogger(Path(cfg.retrieval_trace_file)),
+            reranker=reranker,
+        )
+        return {
+            'query': output.query,
+            'intent': output.intent,
+            'total_chunks_scanned': output.total_chunks_scanned,
+            'hits': [_serialize_hit(hit) for hit in output.hits],
+        }
+
+    def _draft_answer_tool(arguments: dict[str, object]) -> dict[str, object]:
+        _ = arguments
+        return {}
+
+    tool_defs = [
+        LangChainToolDefinition(
+            name='search_evidence',
+            description='Retrieve ranked evidence chunks for grounded answering.',
+            handler=_search_evidence_tool,
+            required_args=('query',),
+        ),
+        LangChainToolDefinition(
+            name='draft_answer',
+            description='Placeholder tool for answer drafting stage.',
+            handler=_draft_answer_tool,
+            required_args=(),
+        ),
+    ]
+
+    planner = create_planner_adapter(
+        provider=cfg.agentic_provider,
+        base_url=cfg.llm_base_url,
+        model=cfg.llm_model,
+    )
+    tool_executor = create_tool_executor_adapter(provider=cfg.agentic_provider, tools=tool_defs)
+    state_graph_runner = create_state_graph_runner_adapter(provider=cfg.agentic_provider)
+    agent_trace_logger = create_agent_trace_logger(Path(cfg.agentic_trace_file))
+    return planner, tool_executor, state_graph_runner, agent_trace_logger
 
 
 def _parse_doc_ids_csv(doc_ids: str | None) -> list[str]:
@@ -263,6 +362,10 @@ def health() -> dict[str, object]:
         'use_vision_ingestion': cfg.use_vision_ingestion,
         'vision_provider': cfg.vision_provider,
         'vision_model': cfg.vision_model,
+        'use_agentic_mode': cfg.use_agentic_mode,
+        'agentic_provider': cfg.agentic_provider,
+        'agentic_max_iterations': cfg.agentic_max_iterations,
+        'agentic_max_tool_calls': cfg.agentic_max_tool_calls,
         'ocr_engine': cfg.ocr_engine,
         'ocr_fallback_engine': cfg.ocr_fallback_engine,
         'contract_errors': len(validation.errors),
@@ -591,7 +694,13 @@ def answer(
 ) -> dict[str, object]:
     cfg = load_config()
     selected_doc_ids = _parse_doc_ids_csv(doc_ids)
+    scoped_chunk_query = _scoped_chunk_query(selected_doc_ids)
     reranker = _build_reranker(cfg)
+    planner, tool_executor, state_graph_runner, agent_trace_logger = _build_agentic_stack(
+        cfg=cfg,
+        chunk_query=scoped_chunk_query,
+        reranker=reranker,
+    )
     output = answer_question_use_case(
         AnswerQuestionInput(
             query=q,
@@ -599,15 +708,23 @@ def answer(
             top_n=top_n,
             rerank_pool_size=rerank_pool_size or cfg.reranker_pool_size,
         ),
-        chunk_query=_scoped_chunk_query(selected_doc_ids),
+        chunk_query=scoped_chunk_query,
         keyword_search=SimpleKeywordSearchAdapter(),
         vector_search=_build_vector_search(cfg),
         trace_logger=AnswerTraceLogger(Path(cfg.answer_trace_file)),
         llm=_build_llm(cfg),
         reranker=reranker,
+        use_agentic_mode=cfg.use_agentic_mode,
+        planner=planner,
+        tool_executor=tool_executor,
+        state_graph_runner=state_graph_runner,
+        agent_trace_logger=agent_trace_logger,
+        agent_max_iterations=cfg.agentic_max_iterations,
+        agent_max_tool_calls=cfg.agentic_max_tool_calls,
+        agent_timeout_seconds=cfg.agentic_timeout_seconds,
     )
 
-    return {
+    response: dict[str, object] = {
         'query': output.query,
         'intent': output.intent,
         'status': output.status,
@@ -629,6 +746,9 @@ def answer(
             for citation in output.citations
         ],
     }
+    if cfg.include_reasoning_summary:
+        response['reasoning_summary'] = output.reasoning_summary
+    return response
 
 
 @app.get('/evaluate/golden')
@@ -638,7 +758,13 @@ def evaluate_golden(
     limit: int = Query(0, ge=0, le=200),
 ) -> dict[str, object]:
     cfg = load_config()
+    chunk_query = FilesystemChunkQueryAdapter(ASSETS_DIR)
     reranker = _build_reranker(cfg)
+    planner, tool_executor, state_graph_runner, agent_trace_logger = _build_agentic_stack(
+        cfg=cfg,
+        chunk_query=chunk_query,
+        reranker=reranker,
+    )
     output = run_golden_evaluation_use_case(
         RunGoldenEvaluationInput(
             catalog_path=CATALOG_PATH,
@@ -647,12 +773,20 @@ def evaluate_golden(
             doc_id_filter=doc_id,
             limit=limit if limit > 0 else None,
         ),
-        chunk_query=FilesystemChunkQueryAdapter(ASSETS_DIR),
+        chunk_query=chunk_query,
         keyword_search=SimpleKeywordSearchAdapter(),
         vector_search=_build_vector_search(cfg),
         trace_logger=AnswerTraceLogger(Path(cfg.answer_trace_file)),
         llm=_build_llm(cfg),
         reranker=reranker,
+        use_agentic_mode=cfg.use_agentic_mode,
+        planner=planner,
+        tool_executor=tool_executor,
+        state_graph_runner=state_graph_runner,
+        agent_trace_logger=agent_trace_logger,
+        agent_max_iterations=cfg.agentic_max_iterations,
+        agent_max_tool_calls=cfg.agentic_max_tool_calls,
+        agent_timeout_seconds=cfg.agentic_timeout_seconds,
     )
 
     return {
@@ -666,15 +800,27 @@ def evaluate_golden(
                 'question_id': row.question_id,
                 'doc': row.doc,
                 'intent': row.intent,
+                'question_type': row.question_type,
+                'difficulty': row.difficulty,
+                'rag_mode': row.rag_mode,
+                'turn_count': row.turn_count,
                 'answer_status': row.answer_status,
                 'has_citation_doc_page': row.has_citation_doc_page,
                 'grounded': row.grounded,
                 'follow_up_expected': row.follow_up_expected,
                 'follow_up_ok': row.follow_up_ok,
+                'expected_keyword_hits': row.expected_keyword_hits,
+                'expected_keyword_total': row.expected_keyword_total,
+                'expected_match': row.expected_match,
+                'missing_expected_keywords': row.missing_expected_keywords,
                 'citation_count': row.citation_count,
                 'pass_result': row.pass_result,
                 'reasons': row.reasons,
                 'follow_up_question': row.follow_up_question,
+                'planned_turns': row.planned_turns,
+                'executed_turns': row.executed_turns,
+                'turn_prompts': row.turn_prompts,
+                'turn_statuses': row.turn_statuses,
             }
             for row in output.results
         ],

@@ -1,10 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from packages.application.agentic.state import AgenticAnswerState
 from packages.application.use_cases.search_evidence import (
     EvidenceHit,
     SearchEvidenceInput,
@@ -13,10 +14,14 @@ from packages.application.use_cases.search_evidence import (
 from packages.domain.citation_formatter import format_citation
 from packages.domain.models import Answer, Citation
 from packages.domain.policies import has_minimum_citation_fields, is_answer_grounded
+from packages.ports.agent_trace_port import AgentTracePort
 from packages.ports.chunk_query_port import ChunkQueryPort
 from packages.ports.keyword_search_port import KeywordSearchPort
 from packages.ports.llm_port import LlmEvidence, LlmPort
+from packages.ports.planner_port import PlannerPort
 from packages.ports.reranker_port import RerankerPort
+from packages.ports.state_graph_runner_port import GraphRunLimits, StateGraphRunnerPort
+from packages.ports.tool_executor_port import ToolExecutorPort
 from packages.ports.vector_search_port import VectorSearchPort
 
 _TOKEN_RE = re.compile(r'[a-z0-9]+')
@@ -48,6 +53,7 @@ _AMBIGUOUS_HINTS = (
     "it won't",
 )
 _COMPARISON_HINTS = (' compare ', ' vs ', ' versus ', ' difference ')
+_ALLOWED_STATUSES = {'ok', 'not_found', 'needs_follow_up', 'partial'}
 
 
 class TraceLoggerPort(Protocol):
@@ -87,6 +93,7 @@ class AnswerQuestionOutput:
     total_chunks_scanned: int
     retrieved_chunk_ids: list[str]
     citations: list[AnswerCitationOutput]
+    reasoning_summary: str | None = None
 
 
 def _tokens(text: str) -> set[str]:
@@ -302,51 +309,76 @@ def _confidence_from_hits(query: str, hits: list[EvidenceHit], status: str) -> s
     return 'low'
 
 
-def answer_question_use_case(
-    input_data: AnswerQuestionInput,
-    chunk_query: ChunkQueryPort,
-    keyword_search: KeywordSearchPort,
-    vector_search: VectorSearchPort,
-    trace_logger: TraceLoggerPort | None = None,
-    llm: LlmPort | None = None,
-    reranker: RerankerPort | None = None,
+def _coerce_evidence_hits(rows: list[dict[str, Any]]) -> list[EvidenceHit]:
+    hits: list[EvidenceHit] = []
+    for row in rows:
+        try:
+            chunk_id = str(row.get('chunk_id') or '').strip()
+            doc_id = str(row.get('doc_id') or '').strip()
+            if not chunk_id or not doc_id:
+                continue
+            hits.append(
+                EvidenceHit(
+                    chunk_id=chunk_id,
+                    doc_id=doc_id,
+                    content_type=str(row.get('content_type') or 'text'),
+                    page_start=int(row.get('page_start') or 0),
+                    page_end=int(row.get('page_end') or 0),
+                    section_path=row.get('section_path'),
+                    figure_id=row.get('figure_id'),
+                    table_id=row.get('table_id'),
+                    score=float(row.get('score') or 0.0),
+                    keyword_score=float(row.get('keyword_score') or 0.0),
+                    vector_score=float(row.get('vector_score') or 0.0),
+                    snippet=str(row.get('snippet') or ''),
+                    rerank_score=float(row.get('rerank_score') or 0.0),
+                )
+            )
+        except Exception:
+            continue
+    hits.sort(key=lambda row: row.score, reverse=True)
+    return hits
+
+
+def _build_answer_output(
+    *,
+    query: str,
+    intent: str,
+    doc_id: str | None,
+    hits: list[EvidenceHit],
+    total_chunks_scanned: int,
+    retrieved_chunk_ids: list[str],
+    answer_text_override: str | None,
+    follow_up_override: str | None,
+    warnings_seed: list[str],
+    llm: LlmPort | None,
+    reasoning_summary: str | None,
 ) -> AnswerQuestionOutput:
-    evidence = search_evidence_use_case(
-        SearchEvidenceInput(
-            query=input_data.query,
-            doc_id=input_data.doc_id,
-            top_n=input_data.top_n,
-            top_k_keyword=input_data.top_k_keyword,
-            top_k_vector=input_data.top_k_vector,
-            rerank_pool_size=input_data.rerank_pool_size,
-        ),
-        chunk_query=chunk_query,
-        keyword_search=keyword_search,
-        vector_search=vector_search,
-        trace_logger=None,
-        reranker=reranker,
-    )
+    follow_up = follow_up_override
+    if follow_up is None:
+        follow_up = _build_follow_up_question(query, hits, doc_id)
 
-    follow_up = _build_follow_up_question(input_data.query, evidence.hits, input_data.doc_id)
-    citations = _build_citations(evidence.hits, limit=None)
-    warnings: list[str] = []
+    citations = _build_citations(hits, limit=None)
+    warnings = list(warnings_seed)
     status = 'ok'
-    answer_text = _compose_answer_text(evidence.hits)
+    answer_text = (answer_text_override or '').strip()
+    if not answer_text:
+        answer_text = _compose_answer_text(hits)
 
-    if _is_insufficient_evidence(input_data.query, evidence.hits):
+    if _is_insufficient_evidence(query, hits):
         status = 'not_found'
-        answer_text = _compose_related_evidence_text(evidence.hits)
+        answer_text = _compose_related_evidence_text(hits)
         warnings.append('Insufficient evidence to provide a grounded direct answer.')
 
     if follow_up is not None:
         status = 'needs_follow_up'
         warnings.append('Query appears ambiguous across manuals or equipment variants.')
 
-    if status == 'ok' and llm is not None:
+    if status == 'ok' and llm is not None and not (answer_text_override or '').strip():
         llm_text = _compose_llm_answer_text(
-            query=input_data.query,
-            intent=evidence.intent,
-            hits=evidence.hits,
+            query=query,
+            intent=intent,
+            hits=hits,
             llm=llm,
         )
         if llm_text:
@@ -356,7 +388,7 @@ def answer_question_use_case(
         text=answer_text,
         citations=citations,
         warnings=list(warnings),
-        metadata={'status': status, 'intent': evidence.intent},
+        metadata={'status': status, 'intent': intent},
     )
 
     if citations and not has_minimum_citation_fields(answer_model):
@@ -373,7 +405,7 @@ def answer_question_use_case(
         answer_text = _NOT_FOUND_TEXT
         warnings.append('No citations available for grounded answer.')
 
-    confidence = _confidence_from_hits(input_data.query, evidence.hits, status)
+    confidence = _confidence_from_hits(query, hits, status)
 
     citation_payload = [
         AnswerCitationOutput(
@@ -387,41 +419,183 @@ def answer_question_use_case(
         for c in answer_model.citations
     ]
 
-    output = AnswerQuestionOutput(
-        query=evidence.query,
-        intent=evidence.intent,
+    return AnswerQuestionOutput(
+        query=query,
+        intent=intent,
         status=status,
         confidence=confidence,
         answer=answer_text,
         follow_up_question=follow_up,
         warnings=list(answer_model.warnings),
-        total_chunks_scanned=evidence.total_chunks_scanned,
-        retrieved_chunk_ids=[h.chunk_id for h in evidence.hits],
+        total_chunks_scanned=total_chunks_scanned,
+        retrieved_chunk_ids=retrieved_chunk_ids,
         citations=citation_payload,
+        reasoning_summary=reasoning_summary,
     )
 
-    if trace_logger is not None:
-        trace_logger.log(
-            {
-                'ts': datetime.now(UTC).isoformat(),
-                'query': output.query,
-                'intent': output.intent,
-                'status': output.status,
-                'confidence': output.confidence,
-                'doc_id': input_data.doc_id,
-                'retrieved_chunk_ids': output.retrieved_chunk_ids,
-                'citations': [
-                    {
-                        'doc_id': citation.doc_id,
-                        'page': citation.page,
-                        'section_path': citation.section_path,
-                        'figure_id': citation.figure_id,
-                        'table_id': citation.table_id,
-                    }
-                    for citation in output.citations
-                ],
-                'follow_up_question': output.follow_up_question,
-            }
-        )
 
+def _log_answer_trace(
+    *,
+    trace_logger: TraceLoggerPort | None,
+    input_data: AnswerQuestionInput,
+    output: AnswerQuestionOutput,
+    agentic: dict[str, Any] | None = None,
+) -> None:
+    if trace_logger is None:
+        return
+
+    payload: dict[str, Any] = {
+        'ts': datetime.now(UTC).isoformat(),
+        'query': output.query,
+        'intent': output.intent,
+        'status': output.status,
+        'confidence': output.confidence,
+        'doc_id': input_data.doc_id,
+        'retrieved_chunk_ids': output.retrieved_chunk_ids,
+        'citations': [
+            {
+                'doc_id': citation.doc_id,
+                'page': citation.page,
+                'section_path': citation.section_path,
+                'figure_id': citation.figure_id,
+                'table_id': citation.table_id,
+            }
+            for citation in output.citations
+        ],
+        'follow_up_question': output.follow_up_question,
+    }
+    if output.reasoning_summary:
+        payload['reasoning_summary'] = output.reasoning_summary
+    if agentic:
+        payload['agentic'] = agentic
+    trace_logger.log(payload)
+
+
+def answer_question_use_case(
+    input_data: AnswerQuestionInput,
+    chunk_query: ChunkQueryPort,
+    keyword_search: KeywordSearchPort,
+    vector_search: VectorSearchPort,
+    trace_logger: TraceLoggerPort | None = None,
+    llm: LlmPort | None = None,
+    reranker: RerankerPort | None = None,
+    use_agentic_mode: bool = False,
+    planner: PlannerPort | None = None,
+    tool_executor: ToolExecutorPort | None = None,
+    state_graph_runner: StateGraphRunnerPort | None = None,
+    agent_trace_logger: AgentTracePort | None = None,
+    agent_max_iterations: int = 4,
+    agent_max_tool_calls: int = 6,
+    agent_timeout_seconds: float = 20.0,
+) -> AnswerQuestionOutput:
+    fallback_warnings: list[str] = []
+
+    if use_agentic_mode and planner and tool_executor and state_graph_runner:
+        initial_state = AgenticAnswerState(
+            query=input_data.query,
+            doc_id=input_data.doc_id,
+            top_n=input_data.top_n,
+            top_k_keyword=input_data.top_k_keyword,
+            top_k_vector=input_data.top_k_vector,
+            rerank_pool_size=input_data.rerank_pool_size,
+        ).to_dict()
+        try:
+            graph_output = state_graph_runner.run(
+                initial_state=initial_state,
+                limits=GraphRunLimits(
+                    max_iterations=max(1, agent_max_iterations),
+                    max_tool_calls=max(1, agent_max_tool_calls),
+                    timeout_seconds=max(1.0, float(agent_timeout_seconds)),
+                ),
+                planner=planner,
+                tool_executor=tool_executor,
+                llm=llm,
+                trace_logger=agent_trace_logger,
+            )
+            state = AgenticAnswerState.from_dict(graph_output.state)
+            hits = _coerce_evidence_hits(state.evidence_hits)
+
+            status = state.status if state.status in _ALLOWED_STATUSES else 'ok'
+            warnings_seed = list(state.warnings)
+            if status != 'ok':
+                warnings_seed.append(f'Agentic status hint: {status}')
+            if graph_output.terminated_reason != 'completed':
+                warnings_seed.append(f'Agentic run terminated: {graph_output.terminated_reason}')
+
+            output = _build_answer_output(
+                query=input_data.query.strip(),
+                intent=state.intent or 'general',
+                doc_id=input_data.doc_id,
+                hits=hits,
+                total_chunks_scanned=state.total_chunks_scanned,
+                retrieved_chunk_ids=state.retrieved_chunk_ids or [h.chunk_id for h in hits],
+                answer_text_override=state.answer_draft,
+                follow_up_override=state.follow_up_question,
+                warnings_seed=warnings_seed,
+                llm=llm,
+                reasoning_summary=state.reasoning_summary,
+            )
+            _log_answer_trace(
+                trace_logger=trace_logger,
+                input_data=input_data,
+                output=output,
+                agentic={
+                    'enabled': True,
+                    'iterations': graph_output.iterations,
+                    'tool_calls': graph_output.tool_calls,
+                    'terminated_reason': graph_output.terminated_reason,
+                },
+            )
+            return output
+        except Exception as exc:
+            fallback_warnings.append(
+                f'Agentic mode fallback triggered: {type(exc).__name__}. Using deterministic path.'
+            )
+            if agent_trace_logger is not None:
+                agent_trace_logger.log(
+                    {
+                        'ts': datetime.now(UTC).isoformat(),
+                        'event': 'agentic_fallback',
+                        'query': input_data.query,
+                        'doc_id': input_data.doc_id,
+                        'error': f'{type(exc).__name__}: {exc}',
+                    }
+                )
+
+    evidence = search_evidence_use_case(
+        SearchEvidenceInput(
+            query=input_data.query,
+            doc_id=input_data.doc_id,
+            top_n=input_data.top_n,
+            top_k_keyword=input_data.top_k_keyword,
+            top_k_vector=input_data.top_k_vector,
+            rerank_pool_size=input_data.rerank_pool_size,
+        ),
+        chunk_query=chunk_query,
+        keyword_search=keyword_search,
+        vector_search=vector_search,
+        trace_logger=None,
+        reranker=reranker,
+    )
+
+    output = _build_answer_output(
+        query=evidence.query,
+        intent=evidence.intent,
+        doc_id=input_data.doc_id,
+        hits=evidence.hits,
+        total_chunks_scanned=evidence.total_chunks_scanned,
+        retrieved_chunk_ids=[h.chunk_id for h in evidence.hits],
+        answer_text_override=None,
+        follow_up_override=None,
+        warnings_seed=fallback_warnings,
+        llm=llm,
+        reasoning_summary=None,
+    )
+
+    _log_answer_trace(
+        trace_logger=trace_logger,
+        input_data=input_data,
+        output=output,
+        agentic={'enabled': False} if use_agentic_mode else None,
+    )
     return output

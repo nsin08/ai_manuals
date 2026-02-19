@@ -3,9 +3,8 @@
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
-from packages.adapters.retrieval.retrieval_trace_logger import RetrievalTraceLogger
 from packages.ports.chunk_query_port import ChunkQueryPort
 from packages.ports.keyword_search_port import KeywordSearchPort, ScoredChunk
 from packages.ports.reranker_port import RerankCandidate, RerankerPort
@@ -45,6 +44,11 @@ class SearchEvidenceOutput:
     intent: str
     total_chunks_scanned: int
     hits: list[EvidenceHit]
+
+
+class TraceLoggerPort(Protocol):
+    def log(self, payload: dict[str, Any]) -> None:
+        ...
 
 
 TABLE_TERMS = {
@@ -229,7 +233,7 @@ def search_evidence_use_case(
     chunk_query: ChunkQueryPort,
     keyword_search: KeywordSearchPort,
     vector_search: VectorSearchPort,
-    trace_logger: RetrievalTraceLogger | None = None,
+    trace_logger: TraceLoggerPort | None = None,
     reranker: RerankerPort | None = None,
 ) -> SearchEvidenceOutput:
     query = input_data.query.strip()
