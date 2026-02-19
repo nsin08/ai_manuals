@@ -15,6 +15,7 @@ from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
 from packages.adapters.tables.simple_table_extractor_adapter import SimpleTableExtractorAdapter
+from packages.adapters.vision.factory import create_vision_adapter
 from packages.application.use_cases.ingest_document import (
     IngestDocumentInput,
     ingest_document_use_case,
@@ -42,6 +43,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--embedding-provider', default='hash', help='Embedding provider: hash|ollama')
     parser.add_argument('--embedding-base-url', default='http://localhost:11434')
     parser.add_argument('--embedding-model', default='mxbai-embed-large:latest')
+    parser.add_argument('--use-vision-ingestion', action='store_true')
+    parser.add_argument('--vision-provider', default='ollama', help='Vision provider: noop|ollama')
+    parser.add_argument('--vision-base-url', default='http://localhost:11434')
+    parser.add_argument('--vision-model', default='qwen2.5vl:7b')
+    parser.add_argument('--vision-max-pages', type=int, default=40)
     return parser.parse_args()
 
 
@@ -70,6 +76,13 @@ def main() -> int:
         base_url=args.embedding_base_url,
         model=args.embedding_model,
     )
+    vision_adapter = None
+    if args.use_vision_ingestion:
+        vision_adapter = create_vision_adapter(
+            provider=args.vision_provider,
+            base_url=args.vision_base_url,
+            model=args.vision_model,
+        )
 
     result = ingest_document_use_case(
         IngestDocumentInput(doc_id=args.doc_id, pdf_path=pdf_path),
@@ -78,6 +91,8 @@ def main() -> int:
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(args.assets_dir),
         embedding_adapter=embedding_adapter,
+        vision_adapter=vision_adapter,
+        vision_max_pages=args.vision_max_pages,
     )
 
     print(json.dumps({

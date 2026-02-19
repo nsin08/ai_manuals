@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -17,6 +17,7 @@ from packages.adapters.retrieval.filesystem_chunk_query_adapter import Filesyste
 from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
 from packages.adapters.retrieval.metadata_vector_search_adapter import MetadataVectorSearchAdapter
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
+from packages.adapters.reranker.factory import create_reranker_adapter
 from packages.application.use_cases.run_golden_evaluation import (
     RunGoldenEvaluationInput,
     run_golden_evaluation_use_case,
@@ -56,6 +57,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--embedding-provider', default='hash', help='hash|ollama')
     parser.add_argument('--embedding-base-url', default='http://localhost:11434')
     parser.add_argument('--embedding-model', default='mxbai-embed-large:latest')
+    parser.add_argument('--use-reranker', action='store_true')
+    parser.add_argument('--reranker-provider', default='ollama', help='noop|ollama')
+    parser.add_argument('--reranker-base-url', default='http://localhost:11434')
+    parser.add_argument('--reranker-model', default='deepseek-r1:8b')
     return parser.parse_args()
 
 
@@ -63,10 +68,10 @@ def main() -> int:
     args = parse_args()
 
     vector_search = HashVectorSearchAdapter()
-    if args.embedding_provider.strip().lower() == 'ollama':
+    if args.embedding_provider.strip().lower() in {'ollama', 'local'}:
         vector_search = MetadataVectorSearchAdapter(
             create_embedding_adapter(
-                provider='ollama',
+                provider=args.embedding_provider,
                 base_url=args.embedding_base_url,
                 model=args.embedding_model,
             )
@@ -78,6 +83,13 @@ def main() -> int:
             provider=args.llm_provider,
             base_url=args.llm_base_url,
             model=args.llm_model,
+        )
+    reranker = None
+    if args.use_reranker:
+        reranker = create_reranker_adapter(
+            provider=args.reranker_provider,
+            base_url=args.reranker_base_url,
+            model=args.reranker_model,
         )
 
     output = run_golden_evaluation_use_case(
@@ -93,6 +105,7 @@ def main() -> int:
         vector_search=vector_search,
         trace_logger=AnswerTraceLogger(args.trace_file),
         llm=llm,
+        reranker=reranker,
     )
 
     payload = {

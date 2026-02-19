@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from dataclasses import dataclass
@@ -16,6 +16,7 @@ from packages.domain.policies import has_minimum_citation_fields, is_answer_grou
 from packages.ports.chunk_query_port import ChunkQueryPort
 from packages.ports.keyword_search_port import KeywordSearchPort
 from packages.ports.llm_port import LlmEvidence, LlmPort
+from packages.ports.reranker_port import RerankerPort
 from packages.ports.vector_search_port import VectorSearchPort
 
 _TOKEN_RE = re.compile(r'[a-z0-9]+')
@@ -61,6 +62,7 @@ class AnswerQuestionInput:
     top_n: int = 6
     top_k_keyword: int = 20
     top_k_vector: int = 20
+    rerank_pool_size: int = 24
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class AnswerQuestionOutput:
     query: str
     intent: str
     status: str
+    confidence: str
     answer: str
     follow_up_question: str | None
     warnings: list[str]
@@ -152,8 +155,6 @@ def _is_insufficient_evidence(query: str, hits: list[EvidenceHit]) -> bool:
     if best_score < 0.22 and best_keyword < 0.35 and best_vector < 0.60:
         return True
 
-    # Comparison questions often distribute evidence across different sections;
-    # use aggregate overlap across multiple hits instead of only the best snippet.
     if is_compare:
         if agg_overlap < 0.22 and overlap < 0.10 and best_vector < 0.70 and best_keyword < 0.45:
             return True
@@ -240,8 +241,6 @@ def _build_citations(hits: list[EvidenceHit], limit: int | None = None) -> list[
     if not hits:
         return citations
 
-    # Relevance-driven citation cutoff:
-    # keep citations while score stays close to the best hit.
     top_score = max(h.score for h in hits)
     min_relevance = max(0.18, top_score * 0.35)
 
@@ -270,7 +269,6 @@ def _build_citations(hits: list[EvidenceHit], limit: int | None = None) -> list[
         if limit is not None and len(citations) >= limit:
             break
 
-    # Ensure at least one citation when hits exist, even if cutoff is strict.
     if not citations and hits:
         first = hits[0]
         page = first.page_start if first.page_start > 0 else max(first.page_end, 1)
@@ -287,6 +285,23 @@ def _build_citations(hits: list[EvidenceHit], limit: int | None = None) -> list[
     return citations
 
 
+def _confidence_from_hits(query: str, hits: list[EvidenceHit], status: str) -> str:
+    if status != 'ok' or not hits:
+        return 'low'
+
+    best_score = hits[0].score
+    overlap = _aggregate_overlap(query, hits)
+    rerank = max((h.rerank_score for h in hits), default=0.0)
+
+    if best_score >= 0.60 and overlap >= 0.35:
+        return 'high'
+    if best_score >= 0.40 and overlap >= 0.22:
+        return 'medium'
+    if rerank >= 0.60 and overlap >= 0.20:
+        return 'medium'
+    return 'low'
+
+
 def answer_question_use_case(
     input_data: AnswerQuestionInput,
     chunk_query: ChunkQueryPort,
@@ -294,6 +309,7 @@ def answer_question_use_case(
     vector_search: VectorSearchPort,
     trace_logger: TraceLoggerPort | None = None,
     llm: LlmPort | None = None,
+    reranker: RerankerPort | None = None,
 ) -> AnswerQuestionOutput:
     evidence = search_evidence_use_case(
         SearchEvidenceInput(
@@ -302,11 +318,13 @@ def answer_question_use_case(
             top_n=input_data.top_n,
             top_k_keyword=input_data.top_k_keyword,
             top_k_vector=input_data.top_k_vector,
+            rerank_pool_size=input_data.rerank_pool_size,
         ),
         chunk_query=chunk_query,
         keyword_search=keyword_search,
         vector_search=vector_search,
         trace_logger=None,
+        reranker=reranker,
     )
 
     follow_up = _build_follow_up_question(input_data.query, evidence.hits, input_data.doc_id)
@@ -355,6 +373,8 @@ def answer_question_use_case(
         answer_text = _NOT_FOUND_TEXT
         warnings.append('No citations available for grounded answer.')
 
+    confidence = _confidence_from_hits(input_data.query, evidence.hits, status)
+
     citation_payload = [
         AnswerCitationOutput(
             doc_id=c.doc_id,
@@ -371,6 +391,7 @@ def answer_question_use_case(
         query=evidence.query,
         intent=evidence.intent,
         status=status,
+        confidence=confidence,
         answer=answer_text,
         follow_up_question=follow_up,
         warnings=list(answer_model.warnings),
@@ -386,6 +407,7 @@ def answer_question_use_case(
                 'query': output.query,
                 'intent': output.intent,
                 'status': output.status,
+                'confidence': output.confidence,
                 'doc_id': input_data.doc_id,
                 'retrieved_chunk_ids': output.retrieved_chunk_ids,
                 'citations': [

@@ -25,6 +25,8 @@ Implemented through Phase 3:
 - Phase 3 grounded answering (citations, not-found path, ambiguity follow-up)
 - Phase 4 UI and evaluation (upload flow, chat source panel, golden-question runner)
 - Phase 5 hardening (CI regression gates, performance baseline, security/local-first checks, release checklist)
+- Reliability Sprint (increment 1): model-swappable pipeline (LLM/embedding/reranker/vision), optional vision-assisted ingestion, reranker-aware retrieval, confidence surfaced in answers
+- Reliability Sprint (increment 2): background ingestion jobs with progress API and page-parallel ingestion workers for faster large-manual processing
 
 Detailed progress and evidence are tracked in `.context/project/PROGRESS_CHECKLIST.md`.
 
@@ -48,6 +50,20 @@ Detailed progress and evidence are tracked in `.context/project/PROGRESS_CHECKLI
 - Local LLM: Ollama
 - UI: Streamlit
 - Runtime: Docker Compose
+
+## Reliability Config
+
+All core models are swappable via `.env`:
+- Answer LLM: `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_MODEL`
+- Embeddings: `EMBEDDING_PROVIDER`, `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL`
+- Reranker: `USE_RERANKER`, `RERANKER_PROVIDER`, `RERANKER_BASE_URL`, `RERANKER_MODEL`, `RERANKER_POOL_SIZE`
+- Vision ingestion: `USE_VISION_INGESTION`, `VISION_PROVIDER`, `VISION_BASE_URL`, `VISION_MODEL`, `VISION_MAX_PAGES`
+- Ingestion parallelism: `INGEST_CONCURRENCY`, `INGEST_PAGE_WORKERS`
+
+Recommended local setup:
+- `EMBEDDING_MODEL=mxbai-embed-large:latest`
+- `LLM_MODEL=deepseek-r1:8b`
+- `VISION_MODEL=qwen2.5vl:7b`
 
 ## Governance
 

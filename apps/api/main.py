@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 
+from apps.api.ingestion_jobs import IngestionJob, IngestionJobManager
 from packages.adapters.answering.answer_trace_logger import AnswerTraceLogger
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
 from packages.adapters.embeddings.factory import create_embedding_adapter
@@ -20,8 +21,10 @@ from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSea
 from packages.adapters.retrieval.metadata_vector_search_adapter import MetadataVectorSearchAdapter
 from packages.adapters.retrieval.retrieval_trace_logger import RetrievalTraceLogger
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
+from packages.adapters.reranker.factory import create_reranker_adapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
 from packages.adapters.tables.simple_table_extractor_adapter import SimpleTableExtractorAdapter
+from packages.adapters.vision.factory import create_vision_adapter
 from packages.application.config import load_config
 from packages.application.use_cases.answer_question import (
     AnswerQuestionInput,
@@ -50,6 +53,8 @@ CATALOG_PATH = DATA_DIR / 'document_catalog.yaml'
 GOLDEN_PATH = DATA_DIR / 'golden_questions.yaml'
 ASSETS_DIR = Path('data/assets')
 UPLOADS_DIR = Path('data/uploads')
+_BOOT_CONFIG = load_config()
+JOB_MANAGER = IngestionJobManager(max_workers=_BOOT_CONFIG.ingest_concurrency)
 
 app = FastAPI(title='Equipment Manuals Chatbot API', version='0.7.0')
 
@@ -63,13 +68,13 @@ def _slugify(value: str) -> str:
 def _build_embedding_adapter(cfg):
     return create_embedding_adapter(
         provider=cfg.embedding_provider,
-        base_url=cfg.local_llm_base_url,
-        model=cfg.local_embedding_model,
+        base_url=cfg.embedding_base_url,
+        model=cfg.embedding_model,
     )
 
 
 def _build_vector_search(cfg):
-    if cfg.embedding_provider.strip().lower() == 'ollama':
+    if cfg.embedding_provider.strip().lower() in {'ollama', 'local'}:
         return MetadataVectorSearchAdapter(_build_embedding_adapter(cfg))
     return HashVectorSearchAdapter()
 
@@ -79,8 +84,28 @@ def _build_llm(cfg):
         return None
     return create_llm_adapter(
         provider=cfg.llm_provider,
-        base_url=cfg.local_llm_base_url,
-        model=cfg.local_llm_model,
+        base_url=cfg.llm_base_url,
+        model=cfg.llm_model,
+    )
+
+
+def _build_reranker(cfg):
+    if not cfg.use_reranker:
+        return None
+    return create_reranker_adapter(
+        provider=cfg.reranker_provider,
+        base_url=cfg.reranker_base_url,
+        model=cfg.reranker_model,
+    )
+
+
+def _build_vision(cfg):
+    if not cfg.use_vision_ingestion:
+        return None
+    return create_vision_adapter(
+        provider=cfg.vision_provider,
+        base_url=cfg.vision_base_url,
+        model=cfg.vision_model,
     )
 
 
@@ -124,6 +149,93 @@ def _resolve_pdf_path(doc_id: str) -> Path | None:
     return None
 
 
+def _serialize_job(job: IngestionJob) -> dict[str, object]:
+    return {
+        'job_id': job.job_id,
+        'kind': job.kind,
+        'doc_id': job.doc_id,
+        'filename': job.filename,
+        'status': job.status,
+        'created_at': job.created_at,
+        'updated_at': job.updated_at,
+        'stage': job.stage,
+        'message': job.message,
+        'processed_pages': job.processed_pages,
+        'total_pages': job.total_pages,
+        'error': job.error,
+        'result': job.result,
+    }
+
+
+def _ingest_uploaded_pdf_task(
+    *,
+    cfg,
+    target_doc_id: str,
+    target_path: Path,
+    original_filename: str,
+):
+    ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
+    embedding_adapter = _build_embedding_adapter(cfg)
+    vision_adapter = _build_vision(cfg)
+
+    def _task(progress_callback):
+        result = ingest_document_use_case(
+            IngestDocumentInput(doc_id=target_doc_id, pdf_path=target_path),
+            pdf_parser=PypdfParserAdapter(),
+            ocr_adapter=ocr_adapter,
+            table_extractor=SimpleTableExtractorAdapter(),
+            chunk_store=FilesystemChunkStoreAdapter(ASSETS_DIR),
+            embedding_adapter=embedding_adapter,
+            vision_adapter=vision_adapter,
+            vision_max_pages=cfg.vision_max_pages,
+            page_workers=cfg.ingest_page_workers,
+            progress_callback=progress_callback,
+        )
+        return {
+            'doc_id': result.doc_id,
+            'filename': original_filename,
+            'stored_path': str(target_path),
+            'asset_ref': result.asset_ref,
+            'total_chunks': result.total_chunks,
+            'by_type': result.by_type,
+        }
+
+    return _task
+
+
+def _ingest_catalog_pdf_task(
+    *,
+    cfg,
+    doc_id: str,
+    pdf_path: Path,
+):
+    ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
+    embedding_adapter = _build_embedding_adapter(cfg)
+    vision_adapter = _build_vision(cfg)
+
+    def _task(progress_callback):
+        result = ingest_document_use_case(
+            IngestDocumentInput(doc_id=doc_id, pdf_path=pdf_path),
+            pdf_parser=PypdfParserAdapter(),
+            ocr_adapter=ocr_adapter,
+            table_extractor=SimpleTableExtractorAdapter(),
+            chunk_store=FilesystemChunkStoreAdapter(ASSETS_DIR),
+            embedding_adapter=embedding_adapter,
+            vision_adapter=vision_adapter,
+            vision_max_pages=cfg.vision_max_pages,
+            page_workers=cfg.ingest_page_workers,
+            progress_callback=progress_callback,
+        )
+        return {
+            'doc_id': result.doc_id,
+            'asset_ref': result.asset_ref,
+            'total_chunks': result.total_chunks,
+            'by_type': result.by_type,
+        }
+
+    return _task
+
+
 @app.get('/health')
 def health() -> dict[str, object]:
     cfg = load_config()
@@ -140,9 +252,17 @@ def health() -> dict[str, object]:
         'app_env': cfg.app_env,
         'llm_provider': cfg.llm_provider,
         'use_llm_answering': cfg.use_llm_answering,
-        'local_llm_model': cfg.local_llm_model,
+        'llm_model': cfg.llm_model,
+        'llm_base_url': cfg.llm_base_url,
         'embedding_provider': cfg.embedding_provider,
-        'local_embedding_model': cfg.local_embedding_model,
+        'embedding_model': cfg.embedding_model,
+        'embedding_base_url': cfg.embedding_base_url,
+        'use_reranker': cfg.use_reranker,
+        'reranker_provider': cfg.reranker_provider,
+        'reranker_model': cfg.reranker_model,
+        'use_vision_ingestion': cfg.use_vision_ingestion,
+        'vision_provider': cfg.vision_provider,
+        'vision_model': cfg.vision_model,
         'ocr_engine': cfg.ocr_engine,
         'ocr_fallback_engine': cfg.ocr_fallback_engine,
         'contract_errors': len(validation.errors),
@@ -245,6 +365,85 @@ def get_pdf(doc_id: str):
     )
 
 
+@app.get('/jobs')
+def list_jobs(limit: int = Query(50, ge=1, le=200)) -> dict[str, object]:
+    rows = JOB_MANAGER.list(limit=limit)
+    return {'jobs': [_serialize_job(row) for row in rows], 'total': len(rows)}
+
+
+@app.get('/jobs/{job_id}')
+def get_job(job_id: str) -> dict[str, object]:
+    try:
+        return _serialize_job(JOB_MANAGER.get(job_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f'Unknown job id: {job_id}') from exc
+
+
+@app.post('/jobs/upload')
+async def upload_manual_job(
+    file: UploadFile = File(...),
+    doc_id: str | None = Form(default=None),
+) -> dict[str, object]:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail='Uploaded file name is required')
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail='Only PDF files are supported')
+
+    resolved_doc_id = _slugify(doc_id or Path(file.filename).stem)
+    ts = datetime.now(UTC).strftime('%Y%m%d%H%M%S')
+    target_doc_id = f'{resolved_doc_id}_{ts}'
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    target_path = UPLOADS_DIR / f'{target_doc_id}.pdf'
+    target_path.write_bytes(await file.read())
+
+    cfg = load_config()
+    job = JOB_MANAGER.submit(
+        kind='upload',
+        doc_id=target_doc_id,
+        filename=file.filename,
+        task=_ingest_uploaded_pdf_task(
+            cfg=cfg,
+            target_doc_id=target_doc_id,
+            target_path=target_path,
+            original_filename=file.filename,
+        ),
+    )
+    return _serialize_job(job)
+
+
+@app.post('/jobs/ingest/{doc_id}')
+def ingest_catalog_job(doc_id: str) -> dict[str, object]:
+    cfg = load_config()
+    catalog = YamlDocumentCatalogAdapter(CATALOG_PATH)
+    record = catalog.get(doc_id)
+
+    if record is None:
+        raise HTTPException(status_code=404, detail=f'Unknown doc id: {doc_id}')
+
+    if record.status != 'present' or not record.filename:
+        raise HTTPException(
+            status_code=400,
+            detail=f'Document {doc_id} is not ingestable (status={record.status})',
+        )
+
+    pdf_path = CATALOG_PATH.parent / record.filename
+    if not pdf_path.exists():
+        raise HTTPException(status_code=400, detail=f'PDF file missing for {doc_id}: {pdf_path}')
+
+    job = JOB_MANAGER.submit(
+        kind='catalog',
+        doc_id=doc_id,
+        filename=record.filename,
+        task=_ingest_catalog_pdf_task(
+            cfg=cfg,
+            doc_id=doc_id,
+            pdf_path=pdf_path,
+        ),
+    )
+    return _serialize_job(job)
+
+
 @app.post('/upload')
 async def upload_manual(
     file: UploadFile = File(...),
@@ -266,6 +465,7 @@ async def upload_manual(
     cfg = load_config()
     ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
     embedding_adapter = _build_embedding_adapter(cfg)
+    vision_adapter = _build_vision(cfg)
     result = ingest_document_use_case(
         IngestDocumentInput(doc_id=target_doc_id, pdf_path=target_path),
         pdf_parser=PypdfParserAdapter(),
@@ -273,6 +473,9 @@ async def upload_manual(
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(ASSETS_DIR),
         embedding_adapter=embedding_adapter,
+        vision_adapter=vision_adapter,
+        vision_max_pages=cfg.vision_max_pages,
+        page_workers=cfg.ingest_page_workers,
     )
 
     return {
@@ -306,6 +509,7 @@ def ingest_document(doc_id: str) -> dict[str, object]:
 
     ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
     embedding_adapter = _build_embedding_adapter(cfg)
+    vision_adapter = _build_vision(cfg)
 
     result = ingest_document_use_case(
         IngestDocumentInput(doc_id=doc_id, pdf_path=pdf_path),
@@ -314,6 +518,9 @@ def ingest_document(doc_id: str) -> dict[str, object]:
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(ASSETS_DIR),
         embedding_adapter=embedding_adapter,
+        vision_adapter=vision_adapter,
+        vision_max_pages=cfg.vision_max_pages,
+        page_workers=cfg.ingest_page_workers,
     )
 
     return {
@@ -330,15 +537,23 @@ def search(
     doc_id: str | None = None,
     doc_ids: str | None = None,
     top_n: int = Query(8, ge=1, le=50),
+    rerank_pool_size: int | None = Query(None, ge=0, le=100),
 ) -> dict[str, object]:
     cfg = load_config()
     selected_doc_ids = _parse_doc_ids_csv(doc_ids)
+    reranker = _build_reranker(cfg)
     output = search_evidence_use_case(
-        SearchEvidenceInput(query=q, doc_id=doc_id, top_n=top_n),
+        SearchEvidenceInput(
+            query=q,
+            doc_id=doc_id,
+            top_n=top_n,
+            rerank_pool_size=rerank_pool_size or cfg.reranker_pool_size,
+        ),
         chunk_query=_scoped_chunk_query(selected_doc_ids),
         keyword_search=SimpleKeywordSearchAdapter(),
         vector_search=_build_vector_search(cfg),
         trace_logger=RetrievalTraceLogger(Path(cfg.retrieval_trace_file)),
+        reranker=reranker,
     )
 
     return {
@@ -358,6 +573,7 @@ def search(
                 'score': hit.score,
                 'keyword_score': hit.keyword_score,
                 'vector_score': hit.vector_score,
+                'rerank_score': hit.rerank_score,
                 'snippet': hit.snippet,
             }
             for hit in output.hits
@@ -371,22 +587,31 @@ def answer(
     doc_id: str | None = None,
     doc_ids: str | None = None,
     top_n: int = Query(6, ge=1, le=20),
+    rerank_pool_size: int | None = Query(None, ge=0, le=100),
 ) -> dict[str, object]:
     cfg = load_config()
     selected_doc_ids = _parse_doc_ids_csv(doc_ids)
+    reranker = _build_reranker(cfg)
     output = answer_question_use_case(
-        AnswerQuestionInput(query=q, doc_id=doc_id, top_n=top_n),
+        AnswerQuestionInput(
+            query=q,
+            doc_id=doc_id,
+            top_n=top_n,
+            rerank_pool_size=rerank_pool_size or cfg.reranker_pool_size,
+        ),
         chunk_query=_scoped_chunk_query(selected_doc_ids),
         keyword_search=SimpleKeywordSearchAdapter(),
         vector_search=_build_vector_search(cfg),
         trace_logger=AnswerTraceLogger(Path(cfg.answer_trace_file)),
         llm=_build_llm(cfg),
+        reranker=reranker,
     )
 
     return {
         'query': output.query,
         'intent': output.intent,
         'status': output.status,
+        'confidence': output.confidence,
         'answer': output.answer,
         'follow_up_question': output.follow_up_question,
         'warnings': output.warnings,
@@ -413,6 +638,7 @@ def evaluate_golden(
     limit: int = Query(0, ge=0, le=200),
 ) -> dict[str, object]:
     cfg = load_config()
+    reranker = _build_reranker(cfg)
     output = run_golden_evaluation_use_case(
         RunGoldenEvaluationInput(
             catalog_path=CATALOG_PATH,
@@ -426,6 +652,7 @@ def evaluate_golden(
         vector_search=_build_vector_search(cfg),
         trace_logger=AnswerTraceLogger(Path(cfg.answer_trace_file)),
         llm=_build_llm(cfg),
+        reranker=reranker,
     )
 
     return {

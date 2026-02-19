@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -12,27 +13,42 @@ if str(PROJECT_ROOT) not in sys.path:
 from packages.adapters.answering.answer_trace_logger import AnswerTraceLogger
 from packages.adapters.embeddings.factory import create_embedding_adapter
 from packages.adapters.llm.factory import create_llm_adapter
+from packages.adapters.reranker.factory import create_reranker_adapter
 from packages.adapters.retrieval.filesystem_chunk_query_adapter import FilesystemChunkQueryAdapter
 from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
 from packages.adapters.retrieval.metadata_vector_search_adapter import MetadataVectorSearchAdapter
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
-from packages.adapters.reranker.factory import create_reranker_adapter
-from packages.application.use_cases.answer_question import (
-    AnswerQuestionInput,
-    answer_question_use_case,
+from packages.application.use_cases.run_golden_evaluation import (
+    RunGoldenEvaluationInput,
+    run_golden_evaluation_use_case,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Run grounded answer generation')
-    parser.add_argument('--query', required=True, help='Question text')
-    parser.add_argument('--doc-id', default=None, help='Optional doc id filter')
-    parser.add_argument('--top-n', type=int, default=6, help='Number of evidence hits to use')
+    parser = argparse.ArgumentParser(description='Run reliability-focused evaluation metrics')
+    parser.add_argument(
+        '--catalog-path',
+        type=Path,
+        default=Path('.context/project/data/document_catalog.yaml'),
+    )
+    parser.add_argument(
+        '--golden-path',
+        type=Path,
+        default=Path('.context/project/data/golden_questions.yaml'),
+    )
     parser.add_argument('--assets-dir', type=Path, default=Path('data/assets'))
+    parser.add_argument('--doc-id', default=None, help='Optional question doc filter')
+    parser.add_argument('--top-n', type=int, default=8)
+    parser.add_argument('--limit', type=int, default=0)
     parser.add_argument(
         '--trace-file',
         type=Path,
         default=Path('.context/reports/answer_traces.jsonl'),
+    )
+    parser.add_argument(
+        '--output',
+        type=Path,
+        default=Path('.context/reports/reliability_eval_summary.json'),
     )
     parser.add_argument('--use-llm-answering', action='store_true')
     parser.add_argument('--llm-provider', default='local')
@@ -45,8 +61,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--reranker-provider', default='ollama', help='noop|ollama')
     parser.add_argument('--reranker-base-url', default='http://localhost:11434')
     parser.add_argument('--reranker-model', default='deepseek-r1:8b')
-    parser.add_argument('--rerank-pool-size', type=int, default=24)
     return parser.parse_args()
+
+
+def _pct(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((numerator / denominator) * 100.0, 2)
 
 
 def main() -> int:
@@ -69,6 +90,7 @@ def main() -> int:
             base_url=args.llm_base_url,
             model=args.llm_model,
         )
+
     reranker = None
     if args.use_reranker:
         reranker = create_reranker_adapter(
@@ -77,12 +99,13 @@ def main() -> int:
             model=args.reranker_model,
         )
 
-    output = answer_question_use_case(
-        AnswerQuestionInput(
-            query=args.query,
-            doc_id=args.doc_id,
+    output = run_golden_evaluation_use_case(
+        RunGoldenEvaluationInput(
+            catalog_path=args.catalog_path,
+            golden_questions_path=args.golden_path,
             top_n=args.top_n,
-            rerank_pool_size=args.rerank_pool_size,
+            doc_id_filter=args.doc_id,
+            limit=args.limit if args.limit > 0 else None,
         ),
         chunk_query=FilesystemChunkQueryAdapter(args.assets_dir),
         keyword_search=SimpleKeywordSearchAdapter(),
@@ -92,33 +115,30 @@ def main() -> int:
         reranker=reranker,
     )
 
-    print(
-        json.dumps(
-            {
-                'query': output.query,
-                'intent': output.intent,
-                'status': output.status,
-                'confidence': output.confidence,
-                'answer': output.answer,
-                'follow_up_question': output.follow_up_question,
-                'warnings': output.warnings,
-                'total_chunks_scanned': output.total_chunks_scanned,
-                'retrieved_chunk_ids': output.retrieved_chunk_ids,
-                'citations': [
-                    {
-                        'doc_id': citation.doc_id,
-                        'page': citation.page,
-                        'section_path': citation.section_path,
-                        'figure_id': citation.figure_id,
-                        'table_id': citation.table_id,
-                        'label': citation.label,
-                    }
-                    for citation in output.citations
-                ],
-            },
-            indent=2,
-        )
-    )
+    rows = output.results
+    grounded_rows = sum(1 for row in rows if row.grounded)
+    citation_rows = sum(1 for row in rows if row.has_citation_doc_page)
+    not_found_rows = [row for row in rows if row.answer_status == 'not_found']
+    false_not_found_rows = [row for row in not_found_rows if row.has_citation_doc_page and row.grounded]
+
+    payload = {
+        'total_questions': output.total_questions,
+        'passed_questions': output.passed_questions,
+        'failed_questions': output.failed_questions,
+        'pass_rate': output.pass_rate,
+        'missing_docs': output.missing_docs,
+        'metrics': {
+            'grounded_rate': _pct(grounded_rows, len(rows)),
+            'citation_presence_rate': _pct(citation_rows, len(rows)),
+            'false_not_found_rate': _pct(len(false_not_found_rows), len(rows)),
+            'not_found_rate': _pct(len(not_found_rows), len(rows)),
+        },
+        'results': [asdict(row) for row in rows],
+    }
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+    print(json.dumps(payload, indent=2))
     return 0
 
 
