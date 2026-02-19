@@ -9,8 +9,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from packages.adapters.embeddings.factory import create_embedding_adapter
 from packages.adapters.retrieval.filesystem_chunk_query_adapter import FilesystemChunkQueryAdapter
 from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
+from packages.adapters.retrieval.metadata_vector_search_adapter import MetadataVectorSearchAdapter
 from packages.adapters.retrieval.retrieval_trace_logger import RetrievalTraceLogger
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
 from packages.application.use_cases.search_evidence import SearchEvidenceInput, search_evidence_use_case
@@ -28,6 +30,9 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path('.context/reports/retrieval_traces.jsonl'),
     )
+    parser.add_argument('--embedding-provider', default='hash', help='hash|ollama')
+    parser.add_argument('--embedding-base-url', default='http://localhost:11434')
+    parser.add_argument('--embedding-model', default='mxbai-embed-large:latest')
     return parser.parse_args()
 
 
@@ -35,11 +40,21 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
+    vector_search = HashVectorSearchAdapter()
+    if args.embedding_provider.strip().lower() == 'ollama':
+        vector_search = MetadataVectorSearchAdapter(
+            create_embedding_adapter(
+                provider='ollama',
+                base_url=args.embedding_base_url,
+                model=args.embedding_model,
+            )
+        )
+
     output = search_evidence_use_case(
         SearchEvidenceInput(query=args.query, doc_id=args.doc_id, top_n=args.top_n),
         chunk_query=FilesystemChunkQueryAdapter(args.assets_dir),
         keyword_search=SimpleKeywordSearchAdapter(),
-        vector_search=HashVectorSearchAdapter(),
+        vector_search=vector_search,
         trace_logger=RetrievalTraceLogger(args.trace_file),
     )
 

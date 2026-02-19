@@ -16,6 +16,11 @@ class AppConfig:
     ingest_concurrency: int
     retrieval_trace_file: str
     answer_trace_file: str
+    use_llm_answering: bool
+    local_llm_base_url: str
+    local_llm_model: str
+    embedding_provider: str
+    local_embedding_model: str
 
 
 
@@ -37,4 +42,9 @@ def load_config() -> AppConfig:
         answer_trace_file=os.getenv(
             'ANSWER_TRACE_FILE', '.context/reports/answer_traces.jsonl'
         ),
+        use_llm_answering=os.getenv('USE_LLM_ANSWERING', 'false').strip().lower() == 'true',
+        local_llm_base_url=os.getenv('LOCAL_LLM_BASE_URL', 'http://localhost:11434'),
+        local_llm_model=os.getenv('LOCAL_LLM_MODEL', 'deepseek-r1:8b'),
+        embedding_provider=os.getenv('EMBEDDING_PROVIDER', 'hash'),
+        local_embedding_model=os.getenv('LOCAL_EMBEDDING_MODEL', 'mxbai-embed-large:latest'),
     )

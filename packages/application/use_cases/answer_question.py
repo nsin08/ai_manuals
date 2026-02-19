@@ -15,9 +15,19 @@ from packages.domain.models import Answer, Citation
 from packages.domain.policies import has_minimum_citation_fields, is_answer_grounded
 from packages.ports.chunk_query_port import ChunkQueryPort
 from packages.ports.keyword_search_port import KeywordSearchPort
+from packages.ports.llm_port import LlmEvidence, LlmPort
 from packages.ports.vector_search_port import VectorSearchPort
 
 _TOKEN_RE = re.compile(r'[a-z0-9]+')
+_ALIASES = {
+    'analog': 'analogue',
+    'analogue': 'analogue',
+    'mean': 'description',
+    'meaning': 'description',
+    'descriptions': 'description',
+    'parameters': 'parameter',
+    'signals': 'signal',
+}
 _NOT_FOUND_TEXT = 'Not found in provided manuals based on retrieved evidence.'
 _STOPWORDS = {
     'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'do', 'does', 'for', 'from',
@@ -36,6 +46,7 @@ _AMBIGUOUS_HINTS = (
     'it will not',
     "it won't",
 )
+_COMPARISON_HINTS = (' compare ', ' vs ', ' versus ', ' difference ')
 
 
 class TraceLoggerPort(Protocol):
@@ -76,11 +87,15 @@ class AnswerQuestionOutput:
 
 
 def _tokens(text: str) -> set[str]:
-    return {
-        token
-        for token in _TOKEN_RE.findall((text or '').lower())
-        if token not in _STOPWORDS and len(token) > 1
-    }
+    out: set[str] = set()
+    for raw in _TOKEN_RE.findall((text or '').lower()):
+        token = raw
+        if len(token) > 3 and token.endswith('s'):
+            token = token[:-1]
+        token = _ALIASES.get(token, token)
+        if token not in _STOPWORDS and len(token) > 1:
+            out.add(token)
+    return out
 
 
 def _query_overlap(query: str, hits: list[EvidenceHit], top_n: int = 3) -> float:
@@ -95,15 +110,58 @@ def _query_overlap(query: str, hits: list[EvidenceHit], top_n: int = 3) -> float
     return best
 
 
+def _aggregate_overlap(query: str, hits: list[EvidenceHit], top_n: int = 6) -> float:
+    q_tokens = _tokens(query)
+    if not q_tokens or not hits:
+        return 0.0
+
+    aggregate_tokens: set[str] = set()
+    for hit in hits[:top_n]:
+        aggregate_tokens.update(_tokens(hit.snippet))
+    return len(q_tokens.intersection(aggregate_tokens)) / max(len(q_tokens), 1)
+
+
+def _best_overlap_count(query: str, hits: list[EvidenceHit], top_n: int = 3) -> tuple[int, int]:
+    q_tokens = _tokens(query)
+    if not q_tokens or not hits:
+        return 0, len(q_tokens)
+
+    best = 0
+    for hit in hits[:top_n]:
+        overlap_count = len(q_tokens.intersection(_tokens(hit.snippet)))
+        best = max(best, overlap_count)
+    return best, len(q_tokens)
+
+
+def _is_comparison_query(query: str) -> bool:
+    q = f' {query.lower()} '
+    return any(hint in q for hint in _COMPARISON_HINTS)
+
+
 def _is_insufficient_evidence(query: str, hits: list[EvidenceHit]) -> bool:
     if not hits:
         return True
 
     best_score = hits[0].score
+    best_keyword = max((h.keyword_score for h in hits), default=0.0)
+    best_vector = max((h.vector_score for h in hits), default=0.0)
     overlap = _query_overlap(query, hits)
-    if best_score < 0.30:
+    agg_overlap = _aggregate_overlap(query, hits)
+    overlap_count, query_token_count = _best_overlap_count(query, hits)
+    is_compare = _is_comparison_query(query)
+    if best_score < 0.22 and best_keyword < 0.35 and best_vector < 0.60:
         return True
-    if overlap < 0.20:
+
+    # Comparison questions often distribute evidence across different sections;
+    # use aggregate overlap across multiple hits instead of only the best snippet.
+    if is_compare:
+        if agg_overlap < 0.22 and overlap < 0.10 and best_vector < 0.70 and best_keyword < 0.45:
+            return True
+    else:
+        if overlap < 0.15 and agg_overlap < 0.25 and best_vector < 0.75 and best_keyword < 0.55:
+            return True
+
+    if query_token_count >= 6 and overlap_count < 2 and agg_overlap < 0.30:
         return True
     return False
 
@@ -142,11 +200,54 @@ def _compose_answer_text(hits: list[EvidenceHit]) -> str:
     return '\n'.join(f'{idx + 1}. {value}' for idx, value in enumerate(points))
 
 
-def _build_citations(hits: list[EvidenceHit], limit: int = 4) -> list[Citation]:
+def _compose_related_evidence_text(hits: list[EvidenceHit]) -> str:
+    if not hits:
+        return _NOT_FOUND_TEXT
+
+    lines = ['Direct answer is not explicitly stated. Closest grounded evidence:']
+    for hit in hits[:3]:
+        snippet = hit.snippet.strip()
+        if not snippet:
+            continue
+        page = hit.page_start if hit.page_start > 0 else hit.page_end
+        lines.append(f'- p.{page}: {snippet}')
+    return '\n'.join(lines)
+
+
+def _compose_llm_answer_text(
+    *,
+    query: str,
+    intent: str,
+    hits: list[EvidenceHit],
+    llm: LlmPort,
+) -> str:
+    evidence = [
+        LlmEvidence(
+            doc_id=hit.doc_id,
+            page_start=hit.page_start,
+            page_end=hit.page_end,
+            content_type=hit.content_type,
+            text=hit.snippet,
+        )
+        for hit in hits[:12]
+    ]
+    return llm.generate_answer(query=query, intent=intent, evidence=evidence).strip()
+
+
+def _build_citations(hits: list[EvidenceHit], limit: int | None = None) -> list[Citation]:
     seen: set[tuple[str, int, str | None, str | None, str | None]] = set()
     citations: list[Citation] = []
+    if not hits:
+        return citations
+
+    # Relevance-driven citation cutoff:
+    # keep citations while score stays close to the best hit.
+    top_score = max(h.score for h in hits)
+    min_relevance = max(0.18, top_score * 0.35)
 
     for hit in hits:
+        if hit.score < min_relevance:
+            continue
         page = hit.page_start if hit.page_start > 0 else max(hit.page_end, 1)
         citation = Citation(
             doc_id=hit.doc_id,
@@ -166,8 +267,22 @@ def _build_citations(hits: list[EvidenceHit], limit: int = 4) -> list[Citation]:
             continue
         seen.add(key)
         citations.append(citation)
-        if len(citations) >= limit:
+        if limit is not None and len(citations) >= limit:
             break
+
+    # Ensure at least one citation when hits exist, even if cutoff is strict.
+    if not citations and hits:
+        first = hits[0]
+        page = first.page_start if first.page_start > 0 else max(first.page_end, 1)
+        citations.append(
+            Citation(
+                doc_id=first.doc_id,
+                page=page,
+                section_path=first.section_path,
+                figure_id=first.figure_id,
+                table_id=first.table_id,
+            )
+        )
 
     return citations
 
@@ -178,6 +293,7 @@ def answer_question_use_case(
     keyword_search: KeywordSearchPort,
     vector_search: VectorSearchPort,
     trace_logger: TraceLoggerPort | None = None,
+    llm: LlmPort | None = None,
 ) -> AnswerQuestionOutput:
     evidence = search_evidence_use_case(
         SearchEvidenceInput(
@@ -194,19 +310,29 @@ def answer_question_use_case(
     )
 
     follow_up = _build_follow_up_question(input_data.query, evidence.hits, input_data.doc_id)
-    citations = _build_citations(evidence.hits, limit=4)
+    citations = _build_citations(evidence.hits, limit=None)
     warnings: list[str] = []
     status = 'ok'
     answer_text = _compose_answer_text(evidence.hits)
 
     if _is_insufficient_evidence(input_data.query, evidence.hits):
         status = 'not_found'
-        answer_text = _NOT_FOUND_TEXT
+        answer_text = _compose_related_evidence_text(evidence.hits)
         warnings.append('Insufficient evidence to provide a grounded direct answer.')
 
     if follow_up is not None:
         status = 'needs_follow_up'
         warnings.append('Query appears ambiguous across manuals or equipment variants.')
+
+    if status == 'ok' and llm is not None:
+        llm_text = _compose_llm_answer_text(
+            query=input_data.query,
+            intent=evidence.intent,
+            hits=evidence.hits,
+            llm=llm,
+        )
+        if llm_text:
+            answer_text = llm_text
 
     answer_model = Answer(
         text=answer_text,

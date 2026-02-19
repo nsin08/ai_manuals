@@ -10,6 +10,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
+from packages.adapters.embeddings.factory import create_embedding_adapter
 from packages.adapters.ocr.factory import create_ocr_adapter
 from packages.adapters.pdf.pypdf_parser_adapter import PypdfParserAdapter
 from packages.adapters.storage.filesystem_chunk_store_adapter import FilesystemChunkStoreAdapter
@@ -38,6 +39,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument('--ocr-engine', default='paddle', help='OCR engine: paddle|tesseract|noop')
     parser.add_argument('--ocr-fallback', default='tesseract', help='Fallback OCR engine')
+    parser.add_argument('--embedding-provider', default='hash', help='Embedding provider: hash|ollama')
+    parser.add_argument('--embedding-base-url', default='http://localhost:11434')
+    parser.add_argument('--embedding-model', default='mxbai-embed-large:latest')
     return parser.parse_args()
 
 
@@ -61,6 +65,11 @@ def main() -> int:
         return 1
 
     ocr_adapter = create_ocr_adapter(args.ocr_engine, args.ocr_fallback)
+    embedding_adapter = create_embedding_adapter(
+        provider=args.embedding_provider,
+        base_url=args.embedding_base_url,
+        model=args.embedding_model,
+    )
 
     result = ingest_document_use_case(
         IngestDocumentInput(doc_id=args.doc_id, pdf_path=pdf_path),
@@ -68,6 +77,7 @@ def main() -> int:
         ocr_adapter=ocr_adapter,
         table_extractor=SimpleTableExtractorAdapter(),
         chunk_store=FilesystemChunkStoreAdapter(args.assets_dir),
+        embedding_adapter=embedding_adapter,
     )
 
     print(json.dumps({

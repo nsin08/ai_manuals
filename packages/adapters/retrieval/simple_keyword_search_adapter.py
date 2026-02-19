@@ -8,11 +8,27 @@ from packages.domain.models import Chunk
 from packages.ports.keyword_search_port import KeywordSearchPort, ScoredChunk
 
 _TOKEN_RE = re.compile(r'[a-z0-9]+')
+_ALIASES = {
+    'analog': 'analogue',
+    'analogue': 'analogue',
+    'mean': 'description',
+    'meaning': 'description',
+    'descriptions': 'description',
+    'parameters': 'parameter',
+    'signals': 'signal',
+}
 
 
 
 def _tokens(text: str) -> list[str]:
-    return _TOKEN_RE.findall((text or '').lower())
+    out: list[str] = []
+    for raw in _TOKEN_RE.findall((text or '').lower()):
+        token = raw
+        if len(token) > 3 and token.endswith('s'):
+            token = token[:-1]
+        token = _ALIASES.get(token, token)
+        out.append(token)
+    return out
 
 
 class SimpleKeywordSearchAdapter(KeywordSearchPort):
