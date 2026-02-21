@@ -72,6 +72,10 @@ _QUERY_NOISE_TERMS = {
     'compare', 'difference', 'versus', 'vs', 'purpose', 'required', 'requirement',
     'setting', 'settings', 'limitation', 'limitations', 'mode',
 }
+_FUSION_KEYWORD_WEIGHT = 0.45
+_FUSION_VECTOR_WEIGHT = 0.55
+_FUSION_RRF_K = 60
+_FUSION_RRF_MIX = 0.35
 
 
 def _detect_intent(query: str) -> str:
@@ -151,17 +155,34 @@ def _normalize_scores(results: list[ScoredChunk]) -> dict[str, float]:
     }
 
 
+def _rank_map(results: list[ScoredChunk]) -> dict[str, int]:
+    return {item.chunk.chunk_id: idx + 1 for idx, item in enumerate(results)}
+
+
+def _rrf_component(rank: int | None, weight: float) -> float:
+    if rank is None or rank <= 0 or weight <= 0:
+        return 0.0
+    return weight / (_FUSION_RRF_K + rank)
+
+
 def _content_type_weight(content_type: str, intent: str) -> float:
+    is_visual = content_type.startswith('visual_')
     if intent == 'table':
-        if content_type == 'table':
+        if content_type in {'table', 'visual_table'}:
             return 1.35
         if content_type in {'figure_ocr', 'figure_caption', 'vision_summary'}:
             return 1.10
+        if is_visual:
+            return 1.20
     if intent == 'diagram':
         if content_type in {'figure_ocr', 'figure_caption', 'vision_summary'}:
             return 1.40
+        if content_type in {'visual_figure', 'visual_image'}:
+            return 1.40
         if content_type == 'table':
             return 1.10
+        if is_visual:
+            return 1.20
     return 1.0
 
 
@@ -170,6 +191,16 @@ def _snippet(text: str, max_len: int = 420) -> str:
     if len(compact) <= max_len:
         return compact
     return compact[: max_len - 3] + '...'
+
+
+def _modality_bucket(content_type: str) -> str:
+    if content_type.startswith('visual_'):
+        return 'visual'
+    if content_type == 'table':
+        return 'table'
+    if content_type in {'figure_ocr', 'figure_caption', 'vision_summary'}:
+        return 'figure_text'
+    return 'text'
 
 
 def _apply_reranker(
@@ -255,6 +286,8 @@ def search_evidence_use_case(
 
     keyword_norm = _normalize_scores(keyword_hits)
     vector_norm = _normalize_scores(vector_hits)
+    keyword_rank = _rank_map(keyword_hits)
+    vector_rank = _rank_map(vector_hits)
 
     by_chunk: dict[str, dict[str, Any]] = {}
 
@@ -285,10 +318,20 @@ def search_evidence_use_case(
     scored_hits: list[tuple[float, EvidenceHit]] = []
     for row in by_chunk.values():
         chunk = row['chunk']
-        base = 0.5 * row['keyword_score'] + 0.5 * row['vector_score']
+        base = (
+            _FUSION_KEYWORD_WEIGHT * row['keyword_score']
+            + _FUSION_VECTOR_WEIGHT * row['vector_score']
+        )
+        rrf_raw = _rrf_component(keyword_rank.get(chunk.chunk_id), _FUSION_KEYWORD_WEIGHT) + _rrf_component(
+            vector_rank.get(chunk.chunk_id),
+            _FUSION_VECTOR_WEIGHT,
+        )
+        # Normalize approximate rrf range back to [0,1] for stable blending.
+        rrf = min(1.0, rrf_raw * (_FUSION_RRF_K + 1))
+        fused = (1.0 - _FUSION_RRF_MIX) * base + _FUSION_RRF_MIX * rrf
         coverage = _anchor_coverage(chunk.content_text, anchors)
         coverage_weight = 0.70 + 0.60 * coverage
-        weighted = base * _content_type_weight(chunk.content_type, intent) * coverage_weight
+        weighted = fused * _content_type_weight(chunk.content_type, intent) * coverage_weight
 
         scored_hits.append(
             (
@@ -331,6 +374,20 @@ def search_evidence_use_case(
     top_hits = hits[: input_data.top_n]
 
     if trace_logger is not None:
+        scanned_content_type_counts: dict[str, int] = {}
+        scanned_modality_counts: dict[str, int] = {}
+        for chunk in chunks:
+            scanned_content_type_counts[chunk.content_type] = (
+                scanned_content_type_counts.get(chunk.content_type, 0) + 1
+            )
+            bucket = _modality_bucket(chunk.content_type)
+            scanned_modality_counts[bucket] = scanned_modality_counts.get(bucket, 0) + 1
+
+        hit_modality_counts: dict[str, int] = {}
+        for hit in top_hits:
+            bucket = _modality_bucket(hit.content_type)
+            hit_modality_counts[bucket] = hit_modality_counts.get(bucket, 0) + 1
+
         trace_logger.log(
             {
                 'ts': datetime.now(UTC).isoformat(),
@@ -341,6 +398,9 @@ def search_evidence_use_case(
                 'anchor_terms': anchors,
                 'reranker_enabled': reranker_enabled,
                 'total_chunks_scanned': len(chunks),
+                'scanned_content_type_counts': scanned_content_type_counts,
+                'scanned_modality_counts': scanned_modality_counts,
+                'top_hit_modality_counts': hit_modality_counts,
                 'top_hits': [
                     {
                         'chunk_id': h.chunk_id,

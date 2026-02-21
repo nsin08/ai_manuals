@@ -35,6 +35,12 @@ class AppConfig:
     embedding_provider: str
     embedding_base_url: str
     embedding_model: str
+    embedding_timeout_seconds: int
+    embedding_max_retries: int
+    embedding_retry_backoff_seconds: float
+    embedding_min_coverage: float
+    embedding_fail_fast: bool
+    embedding_second_pass_max_chars: int
     use_reranker: bool
     reranker_provider: str
     reranker_base_url: str
@@ -79,6 +85,12 @@ def load_config() -> AppConfig:
         embedding_model=_env_alias(
             ['EMBEDDING_MODEL', 'LOCAL_EMBEDDING_MODEL'], 'mxbai-embed-large:latest'
         ),
+        embedding_timeout_seconds=int(_env('EMBEDDING_TIMEOUT_SECONDS', '90')),
+        embedding_max_retries=int(_env('EMBEDDING_MAX_RETRIES', '2')),
+        embedding_retry_backoff_seconds=float(_env('EMBEDDING_RETRY_BACKOFF_SECONDS', '1.0')),
+        embedding_min_coverage=float(_env('EMBEDDING_MIN_COVERAGE', '0.95')),
+        embedding_fail_fast=_env('EMBEDDING_FAIL_FAST', 'false').strip().lower() == 'true',
+        embedding_second_pass_max_chars=int(_env('EMBEDDING_SECOND_PASS_MAX_CHARS', '2048')),
         use_reranker=_env('USE_RERANKER', 'false').strip().lower() == 'true',
         reranker_provider=_env('RERANKER_PROVIDER', 'noop'),
         reranker_base_url=_env_alias(

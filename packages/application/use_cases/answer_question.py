@@ -54,6 +54,9 @@ _AMBIGUOUS_HINTS = (
 )
 _COMPARISON_HINTS = (' compare ', ' vs ', ' versus ', ' difference ')
 _ALLOWED_STATUSES = {'ok', 'not_found', 'needs_follow_up', 'partial'}
+_DIRECT_ANSWER_HEADER = 'Direct answer:'
+_KEY_DETAILS_HEADER = 'Key details:'
+_MISSING_DATA_HEADER = 'If missing data:'
 
 
 class TraceLoggerPort(Protocol):
@@ -242,6 +245,158 @@ def _compose_llm_answer_text(
     return llm.generate_answer(query=query, intent=intent, evidence=evidence).strip()
 
 
+def _dedupe_lines(lines: list[str], limit: int) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        cleaned = ' '.join((line or '').split()).strip(' -')
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(cleaned)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _parse_structured_sections(text: str) -> tuple[str | None, list[str], list[str]]:
+    direct_lines: list[str] = []
+    key_details: list[str] = []
+    missing_data: list[str] = []
+    section: str | None = None
+
+    for raw_line in (text or '').splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        lower = line.lower()
+        if lower.startswith(_DIRECT_ANSWER_HEADER.lower()):
+            section = 'direct'
+            value = line.split(':', 1)[1].strip()
+            if value:
+                direct_lines.append(value)
+            continue
+        if lower.startswith(_KEY_DETAILS_HEADER.lower()):
+            section = 'details'
+            value = line.split(':', 1)[1].strip()
+            if value:
+                key_details.append(value)
+            continue
+        if lower.startswith(_MISSING_DATA_HEADER.lower()):
+            section = 'missing'
+            value = line.split(':', 1)[1].strip()
+            if value:
+                missing_data.append(value)
+            continue
+
+        cleaned = re.sub(r'^\d+\.\s*', '', re.sub(r'^[-*]\s*', '', line)).strip()
+        if not cleaned:
+            continue
+
+        if section == 'direct':
+            direct_lines.append(cleaned)
+        elif section == 'details':
+            key_details.append(cleaned)
+        elif section == 'missing':
+            missing_data.append(cleaned)
+
+    direct_answer = ' '.join(direct_lines).strip() if direct_lines else None
+    return direct_answer, _dedupe_lines(key_details, limit=4), _dedupe_lines(missing_data, limit=4)
+
+
+def _extract_direct_answer_text(answer_text: str) -> str:
+    direct_answer, _, _ = _parse_structured_sections(answer_text)
+    if direct_answer:
+        return direct_answer
+
+    lines = [line.strip() for line in (answer_text or '').splitlines() if line.strip()]
+    if not lines:
+        return _NOT_FOUND_TEXT
+
+    first = re.sub(r'^\d+\.\s*', '', re.sub(r'^[-*]\s*', '', lines[0])).strip()
+    if first.lower().startswith(_DIRECT_ANSWER_HEADER.lower()):
+        first = first.split(':', 1)[1].strip()
+    return first or _NOT_FOUND_TEXT
+
+
+def _build_key_details(answer_text: str, hits: list[EvidenceHit]) -> list[str]:
+    _, parsed_details, _ = _parse_structured_sections(answer_text)
+    if parsed_details:
+        return parsed_details
+
+    details: list[str] = []
+    for hit in hits[:3]:
+        snippet = hit.snippet.strip()
+        if snippet:
+            details.append(snippet)
+    if not details:
+        details.append('No additional grounded details beyond the direct answer.')
+    return _dedupe_lines(details, limit=3)
+
+
+def _build_missing_data_lines(
+    *,
+    status: str,
+    follow_up: str | None,
+    warnings: list[str],
+    answer_text: str,
+) -> list[str]:
+    _, _, parsed_missing = _parse_structured_sections(answer_text)
+    if parsed_missing:
+        return parsed_missing
+
+    if status == 'ok':
+        return ['None identified in retrieved evidence.']
+
+    items: list[str] = []
+    if status == 'needs_follow_up':
+        items.append(follow_up or 'Manual/model context is required to finalize the answer.')
+    if status in {'not_found', 'partial'}:
+        items.append('Direct answer is not explicitly stated in the retrieved evidence.')
+
+    for warning in warnings:
+        lowered = warning.lower()
+        if 'insufficient evidence' in lowered:
+            items.append('Evidence is insufficient for a fully grounded direct answer.')
+        if 'no citations available' in lowered:
+            items.append('Grounding check blocked an ungrounded ok response.')
+
+    if not items:
+        items.append('No additional missing-data notes.')
+
+    return _dedupe_lines(items, limit=3)
+
+
+def _format_eval_answer(
+    *,
+    answer_text: str,
+    status: str,
+    hits: list[EvidenceHit],
+    follow_up: str | None,
+    warnings: list[str],
+) -> str:
+    direct_answer = _extract_direct_answer_text(answer_text)
+    key_details = _build_key_details(answer_text, hits)
+    missing_data = _build_missing_data_lines(
+        status=status,
+        follow_up=follow_up,
+        warnings=warnings,
+        answer_text=answer_text,
+    )
+
+    lines = [f'{_DIRECT_ANSWER_HEADER} {direct_answer}', _KEY_DETAILS_HEADER]
+    for detail in key_details:
+        lines.append(f'- {detail}')
+    lines.append(_MISSING_DATA_HEADER)
+    for item in missing_data:
+        lines.append(f'- {item}')
+    return '\n'.join(lines).strip()
+
+
 def _build_citations(hits: list[EvidenceHit], limit: int | None = None) -> list[Citation]:
     seen: set[tuple[str, int, str | None, str | None, str | None]] = set()
     citations: list[Citation] = []
@@ -353,6 +508,7 @@ def _build_answer_output(
     warnings_seed: list[str],
     llm: LlmPort | None,
     reasoning_summary: str | None,
+    enforce_structured_output: bool,
 ) -> AnswerQuestionOutput:
     follow_up = follow_up_override
     if follow_up is None:
@@ -393,17 +549,39 @@ def _build_answer_output(
 
     if citations and not has_minimum_citation_fields(answer_model):
         filtered = [c for c in citations if c.doc_id and c.page > 0]
+        filtered_warnings = list(warnings) + ['Dropped invalid citations failing minimum schema checks.']
         answer_model = Answer(
             text=answer_text,
             citations=filtered,
-            warnings=warnings + ['Dropped invalid citations failing minimum schema checks.'],
+            warnings=filtered_warnings,
             metadata=answer_model.metadata,
         )
 
     if status == 'ok' and not is_answer_grounded(answer_model):
         status = 'not_found'
         answer_text = _NOT_FOUND_TEXT
-        warnings.append('No citations available for grounded answer.')
+        blocked_warnings = list(answer_model.warnings) + ['No citations available for grounded answer.']
+        answer_model = Answer(
+            text=answer_text,
+            citations=answer_model.citations,
+            warnings=blocked_warnings,
+            metadata=answer_model.metadata,
+        )
+
+    if enforce_structured_output:
+        answer_text = _format_eval_answer(
+            answer_text=answer_text,
+            status=status,
+            hits=hits,
+            follow_up=follow_up,
+            warnings=list(answer_model.warnings),
+        )
+        answer_model = Answer(
+            text=answer_text,
+            citations=answer_model.citations,
+            warnings=list(answer_model.warnings),
+            metadata=answer_model.metadata,
+        )
 
     confidence = _confidence_from_hits(query, hits, status)
 
@@ -487,6 +665,7 @@ def answer_question_use_case(
     agent_max_iterations: int = 4,
     agent_max_tool_calls: int = 6,
     agent_timeout_seconds: float = 20.0,
+    enforce_structured_output: bool = False,
 ) -> AnswerQuestionOutput:
     fallback_warnings: list[str] = []
 
@@ -532,8 +711,9 @@ def answer_question_use_case(
                 answer_text_override=state.answer_draft,
                 follow_up_override=state.follow_up_question,
                 warnings_seed=warnings_seed,
-                llm=llm,
+                llm=None,
                 reasoning_summary=state.reasoning_summary,
+                enforce_structured_output=enforce_structured_output,
             )
             _log_answer_trace(
                 trace_logger=trace_logger,
@@ -590,6 +770,7 @@ def answer_question_use_case(
         warnings_seed=fallback_warnings,
         llm=llm,
         reasoning_summary=None,
+        enforce_structured_output=enforce_structured_output,
     )
 
     _log_answer_trace(

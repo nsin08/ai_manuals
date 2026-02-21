@@ -245,6 +245,7 @@ def run_golden_evaluation_use_case(
             agent_max_iterations=agent_max_iterations,
             agent_max_tool_calls=agent_max_tool_calls,
             agent_timeout_seconds=agent_timeout_seconds,
+            enforce_structured_output=True,
         )
 
     for question in selected_questions:

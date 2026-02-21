@@ -20,9 +20,11 @@ class OllamaLlmAdapter(LlmPort):
             'Rules:',
             '- Use only the provided evidence snippets.',
             '- Do not invent facts, procedures, limits, or parameter values.',
-            '- Prefer a direct answer first, then key details.',
-            '- If evidence is partial, state what is known first, then clearly list unknowns.',
+            '- Start with a direct answer, then explain the reasoning and operational details.',
+            '- If evidence is partial, clearly state what is known and what is unknown.',
             '- Keep tone confident and practical, not hesitant.',
+            '- Prefer an explanatory answer over a short template response.',
+            '- Include concrete details from evidence (steps, conditions, values, constraints) when present.',
             f'Intent: {intent}',
             f'Question: {query}',
             '',
@@ -36,13 +38,12 @@ class OllamaLlmAdapter(LlmPort):
             )
 
         lines.append('')
-        lines.append('Return plain text only in this structure:')
-        lines.append('Direct answer: <1-2 sentences>')
-        lines.append('Key details:')
-        lines.append('- <detail>')
-        lines.append('- <detail>')
-        lines.append('If missing data:')
-        lines.append('- <what is not explicitly present in evidence>')
+        lines.append('Return plain text only.')
+        lines.append('Target format:')
+        lines.append('- One clear opening answer sentence.')
+        lines.append('- 1-2 explanatory paragraphs (or 3-6 bullets) with practical detail.')
+        lines.append('- If relevant, include "why/how/when" guidance grounded in the evidence.')
+        lines.append('- Add a final "Missing data:" sentence only when a real evidence gap affects the answer.')
         return '\n'.join(lines)
 
     def generate_answer(

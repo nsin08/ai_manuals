@@ -1,8 +1,8 @@
 ﻿# System Architecture
 
-Version: 1.1
-Date: 2026-02-17
-Status: Draft Baseline (Revised for Dataset + Golden Questions)
+Version: 1.2
+Date: 2026-02-21
+Status: Rearchitecture Draft (Ingestion, Checking, Retrieval)
 
 ## 1. Architecture Style
 
@@ -18,10 +18,10 @@ Dependency rule:
 
 ## 2. Logical Components
 
-- Ingestion service
-- Retrieval service
-- Answer orchestration service
-- Evaluation service (golden questions)
+- Ingestion pipeline service (layout + OCR + table/figure extraction)
+- Quality and checking service (ingestion QC, contracts, golden eval)
+- Retrieval service (multi-stage, multi-modality)
+- Answer orchestration service (grounded, citation-first)
 - API service
 - UI service
 - Persistence and asset storage
@@ -40,18 +40,24 @@ Dependency rule:
   - `answer_question`
   - `explain_sources`
   - `run_golden_evaluation`
+  - `run_ingestion_checks` (new)
+  - `run_retrieval_checks` (new)
 
 `packages/ports`
 - Repositories:
   - document/chunk repositories
   - evaluation run/result repositories
+  - quality metrics repository (new)
 - Providers:
   - keyword/vector search
+  - table extraction and normalization (new)
+  - layout/region extraction (new)
   - pdf parser
   - OCR
   - object store
   - LLM and optional vision provider
   - document catalog resolver (`doc_id` -> source file)
+  - optional graph store (new)
 
 `packages/adapters`
 - Implementations:
@@ -74,37 +80,51 @@ Dependency rule:
 
 ## 4. Runtime Flows
 
-### 4.1 Ingestion + Query Flow
+### 4.1 Ingestion Flow (v2)
 
 1. User uploads manual via UI/API.
-2. API enqueues ingestion job.
-3. Worker parses pages, extracts tables/figures, runs OCR.
-4. Worker stores chunks and assets; computes embeddings.
-5. User asks a question.
-6. API retrieves evidence via keyword + vector hybrid.
-7. Application composes grounded answer with citations.
-8. UI shows answer and linked evidence.
+2. API enqueues ingestion job with document metadata.
+3. Worker extracts per-page text and layout regions.
+4. OCR runs on low-text pages and figure/table regions.
+5. Tables are extracted with structure when possible, else fallback heuristics.
+6. Figures are cropped, captioned, and OCR summarized as needed.
+7. Chunks are produced by modality: text, table rows, figure OCR, vision summary.
+8. Embeddings computed per chunk and persisted.
+9. Ingestion QC computes coverage metrics and flags low-quality pages.
 
-### 4.2 Golden Evaluation Flow
+### 4.2 Retrieval + Answering Flow (v2)
 
-1. Load `golden_questions.yaml` and document catalog.
-2. Resolve each `doc` alias to one or more ingested docs.
-3. Run Q/A pipeline for each golden question.
-4. Score must-have checks (grounding + citation presence).
-5. Store per-question results and summary metrics.
+1. User asks a question.
+2. Query intent detection (table, diagram, procedure, general).
+3. Candidate retrieval per modality (keyword + vector on text chunks).
+4. Table row retrieval and header-aware search.
+5. Figure and vision chunks retrieval for diagram queries.
+6. Reranker blends candidates and enforces evidence diversity.
+7. Answer composer generates grounded response with citations.
+8. Confidence and evidence coverage are returned with the answer.
+
+### 4.3 Checking Flow (v2)
+
+1. Ingestion QC runs on each document (coverage, OCR ratio, table yield).
+2. Contract checks validate chunk, visual artifact, and metadata schemas.
+3. Golden questions are executed with retrieval traces stored.
+4. Retrieval checks compute recall-at-k and modality hit rates.
+5. Failures are recorded and can gate releases.
 
 ## 5. Data Architecture
 
 Operational datastore:
-- PostgreSQL for `documents`, `chunks`, `embeddings`, `runs`
+- PostgreSQL for `documents`, `chunks`, `embeddings`, `runs`, `quality_metrics`
 
 Evaluation datastore:
 - `evaluation_runs` (run metadata)
 - `evaluation_results` (per question metrics + pass/fail)
+- `retrieval_traces` (query -> chunk ids, modality hits)
 
 Search datastore:
 - pgvector for embeddings
 - Postgres FTS for keyword search
+- optional graph store for connector/pin or cross-artifact relations
 
 Asset storage:
 - Filesystem in MVP
@@ -145,3 +165,5 @@ Testing:
 - When to introduce MinIO boundary?
 - What confidence threshold should trigger follow-up questions?
 - Should golden evaluation run on every PR or nightly only?
+ - Do we need a graph store for connector/pin mappings, or can we derive edges on the fly?
+ - What ingestion QC thresholds should block a document from being searchable?

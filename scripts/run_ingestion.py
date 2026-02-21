@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--embedding-provider', default='hash', help='Embedding provider: hash|ollama')
     parser.add_argument('--embedding-base-url', default='http://localhost:11434')
     parser.add_argument('--embedding-model', default='mxbai-embed-large:latest')
+    parser.add_argument('--embedding-second-pass-max-chars', type=int, default=2048)
     parser.add_argument('--use-vision-ingestion', action='store_true')
     parser.add_argument('--vision-provider', default='ollama', help='Vision provider: noop|ollama')
     parser.add_argument('--vision-base-url', default='http://localhost:11434')
@@ -93,6 +94,7 @@ def main() -> int:
         embedding_adapter=embedding_adapter,
         vision_adapter=vision_adapter,
         vision_max_pages=args.vision_max_pages,
+        embedding_second_pass_max_chars=args.embedding_second_pass_max_chars,
     )
 
     print(json.dumps({
@@ -100,6 +102,14 @@ def main() -> int:
         'asset_ref': result.asset_ref,
         'total_chunks': result.total_chunks,
         'by_type': result.by_type,
+        'embedding_attempted': result.embedding_attempted,
+        'embedding_success_count': result.embedding_success_count,
+        'embedding_failed_count': result.embedding_failed_count,
+        'embedding_coverage': result.embedding_coverage,
+        'embedding_second_pass_attempted': result.embedding_second_pass_attempted,
+        'embedding_second_pass_recovered': result.embedding_second_pass_recovered,
+        'embedding_failure_reasons': result.embedding_failure_reasons or {},
+        'warnings': result.warnings or [],
     }, indent=2))
     return 0
 

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import packages.application.use_cases.run_golden_evaluation as run_golden_module
 from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
+from packages.application.use_cases.answer_question import AnswerQuestionOutput
 from packages.application.use_cases.run_golden_evaluation import (
     RunGoldenEvaluationInput,
     run_golden_evaluation_use_case,
@@ -101,3 +103,48 @@ def test_run_golden_evaluation_reports_summary_and_missing_docs(tmp_path: Path) 
     assert output.missing_docs == ['d_missing']
     assert any(row.question_id == 'Q1' and row.pass_result for row in output.results)
     assert any(row.question_id == 'Q2' and row.answer_status == 'missing_doc' for row in output.results)
+
+
+def test_run_golden_evaluation_uses_structured_output_mode(monkeypatch, tmp_path: Path) -> None:
+    catalog_path, golden_path = _write_contracts(tmp_path)
+    enforce_flags: list[bool] = []
+
+    def _stub_answer_question_use_case(*args, **kwargs):
+        _ = args
+        enforce_flags.append(bool(kwargs.get('enforce_structured_output')))
+        return AnswerQuestionOutput(
+            query='What is the torque value?',
+            intent='general',
+            status='ok',
+            confidence='medium',
+            answer=(
+                'Direct answer: Torque value is 45 Nm.\n'
+                'Key details:\n'
+                '- Sourced from table evidence.\n'
+                'If missing data:\n'
+                '- None identified in retrieved evidence.'
+            ),
+            follow_up_question=None,
+            warnings=[],
+            total_chunks_scanned=1,
+            retrieved_chunk_ids=['c1'],
+            citations=[],
+            reasoning_summary=None,
+        )
+
+    monkeypatch.setattr(run_golden_module, 'answer_question_use_case', _stub_answer_question_use_case)
+
+    output = run_golden_evaluation_use_case(
+        RunGoldenEvaluationInput(
+            catalog_path=catalog_path,
+            golden_questions_path=golden_path,
+            top_n=3,
+        ),
+        chunk_query=InMemoryChunkQuery([]),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=None,
+    )
+
+    assert output.total_questions == 2
+    assert enforce_flags == [True]
