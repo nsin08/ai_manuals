@@ -22,6 +22,14 @@ Closes #<!-- issue-number -->
 | | | | ✅/❌ |
 | | | | ✅/❌ |
 
+## Tests
+
+<!-- List new or updated test files and what they cover -->
+
+| Test File | Covers |
+|-----------|--------|
+| | |
+
 ## Checklist
 
 ### Code Quality

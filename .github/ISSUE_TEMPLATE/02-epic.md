@@ -50,6 +50,13 @@ Parent: #<!-- idea-id -->
 2. 
 3. 
 
+## Non-Goals
+
+<!-- What is explicitly NOT in scope for this epic -->
+
+- 
+- 
+
 ## Acceptance Criteria
 
 <!-- Specific, testable criteria for this epic to be considered complete -->
