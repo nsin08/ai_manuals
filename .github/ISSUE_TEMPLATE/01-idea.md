@@ -38,6 +38,21 @@ labels: ["type:idea", "state:idea"]
 - Approver: @
 - Sponsor: @
 
+## Acceptance Criteria
+
+<!-- How will we verify this idea is successfully delivered? -->
+
+1. 
+2. 
+3. 
+
+## Non-Goals
+
+<!-- What is explicitly NOT part of this idea -->
+
+- 
+- 
+
 ## Additional Context
 
 <!-- Screenshots, links, research, etc. -->
