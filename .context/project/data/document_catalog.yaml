@@ -4,9 +4,8 @@ base_path: ".context/project/data"
 documents:
   - doc_id: navfac_generator_manual
     title: "NAVFAC - Auxiliary Generators O&M manual"
-    filename: ""
-    status: missing
-    notes: "Referenced in golden questions but PDF not currently present in this folder."
+    filename: "navfac_generator_manual.pdf"
+    status: present
 
   - doc_id: neets_module_4
     title: "NEETS Module 4"

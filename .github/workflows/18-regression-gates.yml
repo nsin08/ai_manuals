@@ -1,0 +1,54 @@
+name: Regression Gates
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  regression-gates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate strict data contracts
+        run: |
+          python scripts/validate_data_contracts.py --strict-files
+
+      - name: Run tests
+        run: |
+          pytest tests -q
+
+      - name: Run regression gate checks
+        run: |
+          python scripts/run_regression_gates.py \
+            --golden-path .context/project/data/golden_questions_v3.yaml \
+            --doc-id rockwell_powerflex_40 \
+            --limit 5 \
+            --top-n 6 \
+            --min-pass-rate 80 \
+            --min-grounded-rate 98 \
+            --min-turn-execution-rate 98 \
+            --output .context/reports/regression_gate_ci.json
+
+      - name: Upload regression report
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-gate-report
+          path: .context/reports/regression_gate_ci.json

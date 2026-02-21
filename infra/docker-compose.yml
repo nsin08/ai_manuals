@@ -1,0 +1,115 @@
+﻿services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ai_manuals
+      POSTGRES_USER: ai_manuals
+      POSTGRES_PASSWORD: ai_manuals
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_manuals -d ai_manuals"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - ../.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: python -m apps.worker.main
+    env_file:
+      - ../.env
+    volumes:
+      - ../:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: streamlit run apps/ui/main.py --server.address=0.0.0.0 --server.port=8501
+    env_file:
+      - ../.env
+    volumes:
+      - ../:/app
+    depends_on:
+      api:
+        condition: service_started
+
+  ui-dev:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: streamlit run apps/ui/dev_main.py --server.address=0.0.0.0 --server.port=8501 --server.baseUrlPath=dev
+    env_file:
+      - ../.env
+    volumes:
+      - ../:/app
+    depends_on:
+      api:
+        condition: service_started
+
+  ui-admin:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: streamlit run apps/ui/admin_main.py --server.address=0.0.0.0 --server.port=8501 --server.baseUrlPath=admin
+    env_file:
+      - ../.env
+    volumes:
+      - ../:/app
+    depends_on:
+      api:
+        condition: service_started
+
+  ui-router:
+    image: nginx:1.27-alpine
+    depends_on:
+      ui:
+        condition: service_started
+      ui-dev:
+        condition: service_started
+      ui-admin:
+        condition: service_started
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./nginx/ui-router.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres_data:

@@ -1,117 +1,37 @@
-# Workflow Files Placeholder
+﻿# Workflow Index
 
-**Status:** TO BE COPIED FROM FRAMEWORK  
-**Source:** https://github.com/nsin08/space_framework/tree/main/70-enforcement
+This repository includes governance and quality workflows under `.github/workflows/`.
 
----
+## Core Quality and Release
 
-## Required Workflows (17 total)
+- `09-code-quality.yml`: lint and test jobs
+- `11-security-checks.yml`: secret/dependency scanning
+- `18-regression-gates.yml`: strict regression gates for contracts, tests, and golden threshold
+- `10-release-automation.yml`: tag-driven GitHub release
 
-The following workflow files need to be copied from the space_framework repository:
+## Governance
 
-1. `01-enforce-state-machine.yml` - Enforces state transitions
-2. `02-enforce-artifact-linking.yml` - Validates Epic→Story→PR chain
-3. `03-enforce-approval-gates.yml` - Role-based approval requirements
-4. `04-audit-logger.yml` - Logs all governance events
-5. `05-security-gate.yml` - Security validation
-6. `06-pr-validation.yml` - PR hygiene checks
-7. `07-issue-validation.yml` - Issue quality checks
-8. `08-branch-protection.yml` - Merge requirements
-9. `09-code-quality.yml` - Linting and testing
-10. `10-release-automation.yml` - Release workflow
-11. `11-security-checks.yml` - Vulnerability scanning
-12. `12-epic-story-tracking.yml` - Issue hierarchy validation
-13. `13-definition-of-ready.yml` - DoR checklist validation
-14. `14-definition-of-done.yml` - DoD checklist validation
-15. `15-labeling-standard.yml` - Label consistency
-16. `16-commit-lint.yml` - Conventional commits
-17. `17-file-organization.yml` - Rule 11 file placement
+- `01-enforce-state-machine.yml`
+- `02-enforce-artifact-linking.yml`
+- `03-enforce-approval-gates.yml`
+- `04-audit-logger.yml`
+- `05-security-gate.yml`
+- `06-pr-validation.yml`
+- `07-issue-validation.yml`
+- `08-branch-protection.yml`
+- `12-epic-story-tracking.yml`
+- `13-definition-of-ready.yml`
+- `14-definition-of-done.yml`
+- `15-labeling-standard.yml`
+- `16-commit-lint.yml`
+- `17-file-organization.yml`
 
----
+## Phase 5 Regression Gate Details
 
-## How to Install
+The `18-regression-gates.yml` workflow enforces:
 
-### Option 1: Manual Copy (Recommended for now)
+1. `python scripts/validate_data_contracts.py --strict-files`
+2. `pytest tests -q`
+3. `python scripts/run_regression_gates.py --doc-id rockwell_powerflex_40 --limit 5 --top-n 6 --min-pass-rate 80`
 
-Clone the space_framework repository and copy the workflows:
-
-```bash
-# Clone framework repo
-git clone https://github.com/nsin08/space_framework /tmp/space_framework
-
-# Copy workflows
-cp /tmp/space_framework/70-enforcement/*.yml .github/workflows/
-
-# Review and customize for your project
-```
-
-### Option 2: Using Framework Script
-
-```bash
-# Clone framework locally
-git clone https://github.com/nsin08/space_framework
-
-# Run install script
-python space_framework/scripts/install_framework.py \
-  --source-root space_framework \
-  --repo-root .
-```
-
----
-
-## Project-Specific Customization
-
-After copying, update these in workflows:
-
-- Python version (`3.11`)
-- Test commands (`pytest tests/`)
-- Lint commands (`black .`, `pylint apps/ packages/`)
-- Build commands (if any)
-
----
-
-## Initial Setup (Minimal CI)
-
-For MVP, create a basic CI workflow first:
-
-**`.github/workflows/ci.yml`:**
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      
-      - name: Lint
-        run: |
-          pip install black pylint mypy
-          black --check .
-          pylint apps/ packages/
-      
-      - name: Test
-        run: |
-          pytest tests/ --cov=apps --cov=packages
-```
-
----
-
-**Next Step:** Copy workflows from framework or create minimal CI first
+The workflow uploads `.context/reports/regression_gate_ci.json` as an artifact.
