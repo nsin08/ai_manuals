@@ -29,6 +29,76 @@ if 'active_job_id' not in st.session_state:
     st.session_state.active_job_id = ''
 
 
+_STAGE_ORDER = [
+    'queued',
+    'running',
+    'extracting',
+    'embedding',
+    'persisted',
+    'visual_artifacts',
+    'contract_validation',
+    'completed',
+]
+
+
+def _stage_status(current_stage: str, target_stage: str, status: str) -> str:
+    if status == 'failed':
+        if current_stage == target_stage:
+            return 'failed'
+        if _STAGE_ORDER.index(target_stage) < _STAGE_ORDER.index(current_stage):
+            return 'done'
+        return 'pending'
+
+    if status == 'completed':
+        return 'done'
+
+    if _STAGE_ORDER.index(target_stage) < _STAGE_ORDER.index(current_stage):
+        return 'done'
+    if target_stage == current_stage:
+        return 'active'
+    return 'pending'
+
+
+def _render_stage_timeline(stage: str, status: str) -> None:
+    stage_value = stage if stage in _STAGE_ORDER else 'running'
+    icons = {
+        'done': 'DONE',
+        'active': 'RUN',
+        'pending': 'WAIT',
+        'failed': 'FAIL',
+    }
+    st.markdown('**Pipeline Timeline**')
+    cols = st.columns(len(_STAGE_ORDER))
+    for idx, target in enumerate(_STAGE_ORDER):
+        state = _stage_status(stage_value, target, status)
+        label = target.replace('_', ' ')
+        cols[idx].caption(f"{icons.get(state, state.upper())} {label}")
+
+
+def _extract_gate_buckets(
+    strict_errors: list[str],
+    warnings: list[str],
+) -> dict[str, list[str]]:
+    schema_errors = [row for row in strict_errors if 'must be' in row or 'missing' in row]
+    id_mapping_errors = [
+        row
+        for row in strict_errors
+        if 'duplicate chunk_id' in row or 'not present in visual_chunks.jsonl' in row
+    ]
+    embedding_errors = [
+        row
+        for row in strict_errors
+        if 'embedding' in row or 'dim' in row or 'dimensions' in row
+    ]
+    fallback_warnings = [row for row in warnings if 'low vision_confidence' in row]
+    return {
+        'schema': schema_errors,
+        'id_mapping': id_mapping_errors,
+        'embedding': embedding_errors,
+        'fallback': fallback_warnings,
+    }
+
+
 def _render_job_status(job_payload: dict[str, object]) -> None:
     status = str(job_payload.get('status') or 'unknown')
     stage = str(job_payload.get('stage') or '-')
@@ -43,6 +113,7 @@ def _render_job_status(job_payload: dict[str, object]) -> None:
     m1.metric('Status', status)
     m2.metric('Stage', stage)
     m3.metric('Progress', f'{processed}/{total}' if total > 0 else str(processed))
+    _render_stage_timeline(stage, status)
 
     if total > 0:
         st.progress(min(max(processed / total, 0.0), 1.0))
@@ -168,13 +239,17 @@ with col_b:
 
     total_docs = len(rows)
     total_chunks = sum(int(row.get('total_chunks') or 0) for row in rows)
-    m1, m2 = st.columns(2)
+    total_visual_chunks = sum(int(row.get('visual_chunk_count') or 0) for row in rows)
+    m1, m2, m3 = st.columns(3)
     m1.metric('Ingested Docs', total_docs)
     m2.metric('Total Chunks', total_chunks)
+    m3.metric('Visual Chunks', total_visual_chunks)
 
     if rows:
         doc_options = [str(row.get('doc_id')) for row in rows if row.get('doc_id')]
-        delete_doc_id = st.selectbox('Delete doc_id', options=doc_options)
+        inspect_doc_id = st.selectbox('Inspect doc_id', options=doc_options, key='inspect_doc_id')
+        inspect_doc = next((row for row in rows if str(row.get('doc_id')) == inspect_doc_id), None)
+        delete_doc_id = st.selectbox('Delete doc_id', options=doc_options, key='delete_doc_id')
         if st.button('Delete Selected Doc'):
             try:
                 encoded = urllib.parse.quote(delete_doc_id, safe='')
@@ -187,10 +262,167 @@ with col_b:
             except urllib.error.URLError as exc:
                 st.error(f'Delete request failed: {exc}')
 
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button('Reingest Selected Doc (same config)'):
+                try:
+                    encoded = urllib.parse.quote(inspect_doc_id, safe='')
+                    payload = request_json(
+                        f'{api_base_url}/jobs/reingest/{encoded}',
+                        method='POST',
+                        timeout=60,
+                    )
+                    st.session_state.active_job_id = str(payload.get('job_id') or '')
+                    st.success(f"Started reingest job: {st.session_state.active_job_id}")
+                    st.rerun()
+                except urllib.error.HTTPError as exc:
+                    body = exc.read().decode('utf-8', errors='replace')
+                    st.error(f'Reingest failed: HTTP {exc.code} - {body}')
+                except urllib.error.URLError as exc:
+                    st.error(f'Reingest request failed: {exc}')
+
+        with c2:
+            if st.button('Regenerate Visual Artifacts'):
+                try:
+                    encoded = urllib.parse.quote(inspect_doc_id, safe='')
+                    payload = request_json(
+                        f'{api_base_url}/ingested/{encoded}/visual-artifacts/generate',
+                        method='POST',
+                        timeout=120,
+                    )
+                    st.success(
+                        'Visual artifact regeneration completed '
+                        f"for {payload.get('doc_id')}"
+                    )
+                    st.rerun()
+                except urllib.error.HTTPError as exc:
+                    body = exc.read().decode('utf-8', errors='replace')
+                    st.error(f'Visual artifact generation failed: HTTP {exc.code} - {body}')
+                except urllib.error.URLError as exc:
+                    st.error(f'Visual artifact generation request failed: {exc}')
+
+        latest_run = ((inspect_doc or {}).get('latest_ingestion_run') or {})
+        latest_result = (latest_run.get('result') or {}) if isinstance(latest_run, dict) else {}
+        latest_config = (latest_run.get('config') or {}) if isinstance(latest_run, dict) else {}
+        if latest_result:
+            st.markdown('**Latest Ingestion Metrics**')
+            lm1, lm2, lm3, lm4, lm5 = st.columns(5)
+            lm1.metric('Embedding Coverage', f"{float(latest_result.get('embedding_coverage') or 0.0):.2%}")
+            lm2.metric('Embedding Success', int(latest_result.get('embedding_success_count') or 0))
+            lm3.metric('Embedding Failed', int(latest_result.get('embedding_failed_count') or 0))
+            lm4.metric(
+                '2nd Pass Recovered',
+                int(latest_result.get('embedding_second_pass_recovered') or 0),
+            )
+            lm5.metric('Embedding Warnings', int(latest_result.get('embedding_warning_count') or 0))
+            st.caption(
+                'Embedding config: '
+                f"timeout={latest_config.get('embedding_timeout_seconds')}s, "
+                f"retries={latest_config.get('embedding_max_retries')}, "
+                f"second_pass_max_chars={latest_config.get('embedding_second_pass_max_chars')}"
+            )
+
+        try:
+            encoded = urllib.parse.quote(inspect_doc_id, safe='')
+            validation_payload = request_json(
+                f'{api_base_url}/ingested/{encoded}/validation',
+                timeout=30,
+            )
+            visual_contract = validation_payload.get('visual_contract') or {}
+            strict_errors = list(visual_contract.get('strict_errors') or [])
+            warnings = list(visual_contract.get('warnings') or [])
+            gate_buckets = _extract_gate_buckets(strict_errors, warnings)
+
+            st.markdown('**Deterministic Validation Gates**')
+            g1, g2, g3, g4 = st.columns(4)
+            g1.metric('Schema', 'PASS' if not gate_buckets['schema'] else 'FAIL')
+            g2.metric('ID/Mapping', 'PASS' if not gate_buckets['id_mapping'] else 'FAIL')
+            g3.metric('Embedding', 'PASS' if not gate_buckets['embedding'] else 'FAIL')
+            g4.metric('Fallback', 'PASS' if not gate_buckets['fallback'] else 'WARN')
+
+            if strict_errors:
+                with st.expander(f'Contract Errors ({len(strict_errors)})'):
+                    st.json(strict_errors)
+            if warnings:
+                with st.expander(f'Contract Warnings ({len(warnings)})'):
+                    st.json(warnings)
+
+            runs = validation_payload.get('ingestion_runs') or []
+            if runs:
+                with st.expander('Ingestion Run History'):
+                    run_rows = [
+                        {
+                            'ts': row.get('ts'),
+                            'source': row.get('source'),
+                            'pdf_sha256': str(row.get('pdf_sha256') or '')[:12],
+                            'vision_model': (row.get('config') or {}).get('vision_model'),
+                            'embedding_model': (row.get('config') or {}).get('embedding_model'),
+                            'validation_valid': (row.get('result') or {}).get('validation_valid'),
+                            'total_chunks': (row.get('result') or {}).get('total_chunks'),
+                            'embedding_coverage': (row.get('result') or {}).get('embedding_coverage'),
+                            'embedding_failed_count': (row.get('result') or {}).get(
+                                'embedding_failed_count'
+                            ),
+                            'embedding_second_pass_recovered': (row.get('result') or {}).get(
+                                'embedding_second_pass_recovered'
+                            ),
+                            'embedding_failure_reason_count': (row.get('result') or {}).get(
+                                'embedding_failure_reason_count'
+                            ),
+                        }
+                        for row in runs
+                        if isinstance(row, dict)
+                    ]
+                    st.dataframe(run_rows, use_container_width=True)
+        except urllib.error.URLError as exc:
+            st.warning(f'Validation panel unavailable: {exc}')
+
+        try:
+            encoded = urllib.parse.quote(inspect_doc_id, safe='')
+            visual_payload = request_json(
+                f'{api_base_url}/ingested/{encoded}/visual-chunks?limit=250',
+                timeout=30,
+            )
+            visual_rows = [row for row in (visual_payload.get('rows') or []) if isinstance(row, dict)]
+            st.markdown(f"**Visual Region Inspector** ({len(visual_rows)}/{visual_payload.get('total', 0)})")
+            if visual_rows:
+                selector = [
+                    f"{row.get('chunk_id')} | p{row.get('page')} | {row.get('modality')}"
+                    for row in visual_rows
+                ]
+                selected_idx = st.selectbox(
+                    'Select region',
+                    options=list(range(len(visual_rows))),
+                    format_func=lambda idx: selector[idx],
+                    key='visual_region_select',
+                )
+                selected_row = visual_rows[int(selected_idx)]
+                st.json(selected_row)
+                st.dataframe(
+                    [
+                        {
+                            'chunk_id': row.get('chunk_id'),
+                            'page': row.get('page'),
+                            'modality': row.get('modality'),
+                            'figure_id': row.get('figure_id'),
+                            'table_id': row.get('table_id'),
+                            'region_id': row.get('region_id'),
+                        }
+                        for row in visual_rows
+                    ],
+                    use_container_width=True,
+                )
+            else:
+                st.info('No visual chunks available for this document.')
+        except urllib.error.URLError as exc:
+            st.warning(f'Visual region inspector unavailable: {exc}')
+
         table_rows = [
             {
                 'doc_id': row.get('doc_id'),
                 'total_chunks': row.get('total_chunks'),
+                'visual_chunks': row.get('visual_chunk_count'),
+                'visual_contract_valid': row.get('visual_contract_valid'),
                 'updated_at': row.get('updated_at'),
                 'catalog_status': row.get('catalog_status'),
                 'in_catalog': row.get('in_catalog'),

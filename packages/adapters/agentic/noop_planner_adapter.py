@@ -15,6 +15,19 @@ class NoopPlannerAdapter(PlannerPort):
         _ = intent, doc_id
         budget = max(max_steps, 1)
         lower = query.lower()
+        is_comparison = any(token in lower for token in ('compare', 'difference', ' versus ', ' vs '))
+        wants_visual = any(
+            token in lower
+            for token in (
+                'diagram',
+                'figure',
+                'image',
+                'callout',
+                'visual',
+                'multimodal',
+            )
+        )
+        wants_table = any(token in lower for token in ('table', 'spec', 'parameter', 'setting'))
 
         steps: list[PlanStep] = [
             PlanStep(
@@ -24,10 +37,22 @@ class NoopPlannerAdapter(PlannerPort):
             )
         ]
 
-        if budget >= 3 and any(token in lower for token in ('compare', 'difference', ' versus ', ' vs ')):
+        if budget >= len(steps) + 1 and (wants_visual or wants_table):
+            focus = 'visual and table evidence' if wants_visual and wants_table else (
+                'visual evidence' if wants_visual else 'table evidence'
+            )
             steps.append(
                 PlanStep(
-                    step_id='step_2',
+                    step_id=f'step_{len(steps) + 1}',
+                    tool_name='search_evidence',
+                    objective=f'Run a focused retrieval pass for {focus}.',
+                )
+            )
+
+        if budget >= len(steps) + 1 and is_comparison:
+            steps.append(
+                PlanStep(
+                    step_id=f'step_{len(steps) + 1}',
                     tool_name='search_evidence',
                     objective='Run a second retrieval pass to improve comparison coverage.',
                 )

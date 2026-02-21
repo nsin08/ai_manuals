@@ -34,6 +34,19 @@ from packages.application.use_cases.validate_data_contracts import (
 )
 
 
+def _default_golden_path() -> Path:
+    v3_path = Path('.context/project/data/golden_questions_v3.yaml')
+    if v3_path.exists():
+        return v3_path
+    return Path('.context/project/data/golden_questions.yaml')
+
+
+def _pct(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((numerator / denominator) * 100.0, 2)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Run strict regression gates for Phase 5')
     parser.add_argument(
@@ -44,12 +57,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--golden-path',
         type=Path,
-        default=Path('.context/project/data/golden_questions.yaml'),
+        default=_default_golden_path(),
     )
     parser.add_argument('--doc-id', default='rockwell_powerflex_40')
     parser.add_argument('--top-n', type=int, default=6)
     parser.add_argument('--limit', type=int, default=5)
     parser.add_argument('--min-pass-rate', type=float, default=80.0)
+    parser.add_argument('--min-grounded-rate', type=float, default=98.0)
+    parser.add_argument('--min-turn-execution-rate', type=float, default=98.0)
     parser.add_argument('--ocr-engine', default='noop')
     parser.add_argument('--ocr-fallback', default='noop')
     parser.add_argument(
@@ -153,6 +168,15 @@ def main() -> int:
         trace_logger=None,
     )
     eval_secs = round(time.perf_counter() - eval_start, 3)
+    total_questions = eval_result.total_questions
+    grounded_questions = sum(1 for row in eval_result.results if row.grounded)
+    grounded_rate = _pct(grounded_questions, total_questions)
+    turn_execution_questions = sum(
+        1 for row in eval_result.results if row.executed_turns >= row.planned_turns
+    )
+    turn_execution_rate = _pct(turn_execution_questions, total_questions)
+    planned_turns_total = sum(row.planned_turns for row in eval_result.results)
+    executed_turns_total = sum(row.executed_turns for row in eval_result.results)
 
     pass_rate_ok = eval_result.pass_rate >= args.min_pass_rate
     checks.append(
@@ -165,6 +189,28 @@ def main() -> int:
             'total_questions': eval_result.total_questions,
             'failed_questions': eval_result.failed_questions,
             'duration_seconds': eval_secs,
+        }
+    )
+    checks.append(
+        {
+            'name': 'grounded_threshold',
+            'passed': grounded_rate >= args.min_grounded_rate and not eval_result.missing_docs,
+            'min_grounded_rate': args.min_grounded_rate,
+            'actual_grounded_rate': grounded_rate,
+            'grounded_questions': grounded_questions,
+            'total_questions': total_questions,
+        }
+    )
+    checks.append(
+        {
+            'name': 'turn_execution_threshold',
+            'passed': turn_execution_rate >= args.min_turn_execution_rate and not eval_result.missing_docs,
+            'min_turn_execution_rate': args.min_turn_execution_rate,
+            'actual_turn_execution_rate': turn_execution_rate,
+            'turn_execution_questions': turn_execution_questions,
+            'total_questions': total_questions,
+            'planned_turns_total': planned_turns_total,
+            'executed_turns_total': executed_turns_total,
         }
     )
 
@@ -181,6 +227,12 @@ def main() -> int:
             'passed_questions': eval_result.passed_questions,
             'failed_questions': eval_result.failed_questions,
             'pass_rate': eval_result.pass_rate,
+            'grounded_questions': grounded_questions,
+            'grounded_rate': grounded_rate,
+            'turn_execution_questions': turn_execution_questions,
+            'turn_execution_rate': turn_execution_rate,
+            'planned_turns_total': planned_turns_total,
+            'executed_turns_total': executed_turns_total,
             'missing_docs': eval_result.missing_docs,
             'results': [asdict(row) for row in eval_result.results],
         },

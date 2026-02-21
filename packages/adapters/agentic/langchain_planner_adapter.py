@@ -86,6 +86,7 @@ class LangChainPlannerAdapter(PlannerPort):
             'Return ONLY a JSON array of steps.\n'
             'Each step object must have: step_id, tool_name, objective.\n'
             'Allowed tool_name values: search_evidence, draft_answer.\n'
+            'If the query requests figures/diagrams/images/tables, include a focused retrieval step before drafting.\n'
             f'Max steps: {budget}.\n'
             f'Intent: {intent}.\n'
             f'Doc filter: {doc_id or "none"}.\n'

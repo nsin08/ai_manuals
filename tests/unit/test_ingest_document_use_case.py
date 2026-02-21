@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from packages.application.use_cases.ingest_document import (
     IngestDocumentInput,
     ingest_document_use_case,
@@ -51,6 +53,28 @@ class FakeEmbedding(EmbeddingPort):
         return [float(len(text or '')), 1.0]
 
 
+class FlakyEmbedding(EmbeddingPort):
+    def __init__(self) -> None:
+        self._seen: dict[str, int] = {}
+
+    def embed_text(self, text: str) -> list[float]:
+        value = (text or '').lower()
+        self._seen[value] = self._seen.get(value, 0) + 1
+        if ('acro-set' in value or 'figure' in value) and self._seen[value] == 1:
+            return []
+        return [float(len(text or '')), 1.0]
+
+
+class AlwaysFailEmbedding(EmbeddingPort):
+    @property
+    def last_error(self) -> str:
+        return 'simulated-embedding-failure'
+
+    def embed_text(self, text: str) -> list[float]:
+        _ = text
+        return []
+
+
 
 def test_ingest_document_produces_expected_chunk_types() -> None:
     store = InMemoryChunkStore()
@@ -83,3 +107,59 @@ def test_ingest_document_attaches_embeddings_when_adapter_provided() -> None:
 
     assert store.saved
     assert any(isinstance(chunk.metadata.get('embedding'), list) for chunk in store.saved)
+
+
+def test_ingest_document_reports_embedding_coverage_and_warnings() -> None:
+    store = InMemoryChunkStore()
+    result = ingest_document_use_case(
+        IngestDocumentInput(doc_id='doc-embed-warn', pdf_path=Path('ignored.pdf')),
+        pdf_parser=FakePdfParser(),
+        ocr_adapter=FakeOcr(),
+        table_extractor=FakeTables(),
+        chunk_store=store,
+        embedding_adapter=FlakyEmbedding(),
+    )
+
+    assert result.embedding_attempted
+    assert result.embedding_second_pass_attempted
+    assert result.embedding_second_pass_recovered > 0
+    assert result.embedding_failed_count == 0
+    assert result.embedding_coverage == 1.0
+    assert result.warnings
+    assert any('Second-pass embedding recovered' in warning for warning in result.warnings)
+
+
+def test_ingest_document_can_fail_fast_on_low_embedding_coverage() -> None:
+    store = InMemoryChunkStore()
+    with pytest.raises(ValueError):
+        ingest_document_use_case(
+            IngestDocumentInput(doc_id='doc-embed-fail-fast', pdf_path=Path('ignored.pdf')),
+            pdf_parser=FakePdfParser(),
+            ocr_adapter=FakeOcr(),
+            table_extractor=FakeTables(),
+            chunk_store=store,
+            embedding_adapter=AlwaysFailEmbedding(),
+            embedding_min_coverage=0.95,
+            embedding_fail_fast=True,
+        )
+
+
+def test_ingest_document_reports_failure_reasons_when_embedding_still_fails() -> None:
+    store = InMemoryChunkStore()
+    result = ingest_document_use_case(
+        IngestDocumentInput(doc_id='doc-embed-reasons', pdf_path=Path('ignored.pdf')),
+        pdf_parser=FakePdfParser(),
+        ocr_adapter=FakeOcr(),
+        table_extractor=FakeTables(),
+        chunk_store=store,
+        embedding_adapter=AlwaysFailEmbedding(),
+    )
+
+    assert result.embedding_attempted
+    assert result.embedding_second_pass_attempted
+    assert result.embedding_failed_count > 0
+    assert result.embedding_failure_reasons
+    assert all(
+        reason == 'simulated-embedding-failure'
+        for reason in result.embedding_failure_reasons.values()
+    )

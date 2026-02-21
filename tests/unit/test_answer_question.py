@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import packages.application.use_cases.answer_question as answer_question_module
 from packages.adapters.answering.answer_trace_logger import AnswerTraceLogger
 from packages.adapters.retrieval.hash_vector_search_adapter import HashVectorSearchAdapter
 from packages.adapters.retrieval.simple_keyword_search_adapter import SimpleKeywordSearchAdapter
@@ -114,3 +115,87 @@ def test_answer_question_triggers_single_follow_up_for_ambiguous_prompt() -> Non
     assert output.follow_up_question is not None
     assert output.follow_up_question.endswith('?')
     assert output.follow_up_question.count('?') == 1
+
+
+def test_answer_question_enforces_structured_sections_in_eval_mode() -> None:
+    output = answer_question_use_case(
+        AnswerQuestionInput(query='What is the torque specification in Nm?', doc_id='d1'),
+        chunk_query=InMemoryChunkQuery(_sample_chunks()),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=None,
+        enforce_structured_output=True,
+    )
+
+    assert output.status == 'ok'
+    assert output.answer
+    assert 'Direct answer:' in output.answer
+    assert 'Key details:' in output.answer
+    assert 'If missing data:' in output.answer
+    assert '- None identified in retrieved evidence.' in output.answer
+
+
+def test_answer_question_grounding_gate_demotes_ungrounded_ok(monkeypatch) -> None:
+    def _force_empty_citations(hits, limit=None):
+        _ = hits, limit
+        return []
+
+    def _force_sufficient_evidence(query, hits):
+        _ = query, hits
+        return False
+
+    monkeypatch.setattr(answer_question_module, '_build_citations', _force_empty_citations)
+    monkeypatch.setattr(answer_question_module, '_is_insufficient_evidence', _force_sufficient_evidence)
+
+    output = answer_question_use_case(
+        AnswerQuestionInput(query='What is the torque specification in Nm?', doc_id='d1'),
+        chunk_query=InMemoryChunkQuery(_sample_chunks()),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=None,
+    )
+
+    assert output.status == 'not_found'
+    assert any('No citations available for grounded answer.' in warning for warning in output.warnings)
+
+
+def test_answer_question_citation_labels_include_multimodal_refs() -> None:
+    chunks = [
+        Chunk(
+            chunk_id='c1',
+            doc_id='d1',
+            content_type='table',
+            page_start=10,
+            page_end=10,
+            content_text='Torque table value is 45 Nm at rated load.',
+            table_id='tbl-1',
+        ),
+        Chunk(
+            chunk_id='c2',
+            doc_id='d1',
+            content_type='figure_ocr',
+            page_start=11,
+            page_end=11,
+            content_text='Terminal map figure shows U/V/W wiring and startup guidance.',
+            figure_id='fig-3',
+        ),
+    ]
+    table_output = answer_question_use_case(
+        AnswerQuestionInput(query='What is the torque table value?', doc_id='d1'),
+        chunk_query=InMemoryChunkQuery(chunks),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=None,
+    )
+    figure_output = answer_question_use_case(
+        AnswerQuestionInput(query='What does the terminal map figure show?', doc_id='d1'),
+        chunk_query=InMemoryChunkQuery(chunks),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=None,
+    )
+
+    table_labels = [citation.label for citation in table_output.citations]
+    figure_labels = [citation.label for citation in figure_output.citations]
+    assert any('table tbl-1' in label for label in table_labels)
+    assert any('figure fig-3' in label for label in figure_labels)

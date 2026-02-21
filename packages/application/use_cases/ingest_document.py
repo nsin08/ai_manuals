@@ -29,6 +29,15 @@ class IngestDocumentOutput:
     asset_ref: str
     total_chunks: int
     by_type: dict[str, int]
+    embedding_attempted: bool = False
+    embedding_success_count: int = 0
+    embedding_failed_count: int = 0
+    embedding_coverage: float = 0.0
+    embedding_failed_chunk_ids: list[str] | None = None
+    embedding_failure_reasons: dict[str, str] | None = None
+    embedding_second_pass_attempted: bool = False
+    embedding_second_pass_recovered: int = 0
+    warnings: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +49,23 @@ class _PageProcessingOutput:
 
 def _new_chunk_id() -> str:
     return str(uuid.uuid4())
+
+
+def _copy_chunk_with_metadata(chunk: Chunk, metadata: dict[str, Any]) -> Chunk:
+    return Chunk(
+        chunk_id=chunk.chunk_id,
+        doc_id=chunk.doc_id,
+        content_type=chunk.content_type,
+        page_start=chunk.page_start,
+        page_end=chunk.page_end,
+        content_text=chunk.content_text,
+        section_path=chunk.section_path,
+        figure_id=chunk.figure_id,
+        table_id=chunk.table_id,
+        caption=chunk.caption,
+        asset_ref=chunk.asset_ref,
+        metadata=metadata,
+    )
 
 
 def _extract_figure_captions(page_text: str) -> list[str]:
@@ -213,6 +239,9 @@ def ingest_document_use_case(
     vision_adapter: VisionPort | None = None,
     vision_max_pages: int = 40,
     page_workers: int = 1,
+    embedding_min_coverage: float = 0.0,
+    embedding_fail_fast: bool = False,
+    embedding_second_pass_max_chars: int = 2048,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> IngestDocumentOutput:
     pages = pdf_parser.parse(str(input_data.pdf_path))
@@ -294,7 +323,17 @@ def ingest_document_use_case(
         for chunk_type, count in page_output.by_type.items():
             by_type[chunk_type] = by_type.get(chunk_type, 0) + count
 
+    embedding_attempted = False
+    embedding_success_count = 0
+    embedding_failed_count = 0
+    embedding_failed_chunk_ids: list[str] = []
+    embedding_failure_reasons: dict[str, str] = {}
+    embedding_second_pass_attempted = False
+    embedding_second_pass_recovered = 0
+    warnings: list[str] = []
+
     if embedding_adapter is not None:
+        embedding_attempted = True
         if progress_callback is not None:
             progress_callback(
                 {
@@ -306,28 +345,99 @@ def ingest_document_use_case(
             )
 
         enriched: list[Chunk] = []
-        for chunk in chunks:
+        failed_positions: list[int] = []
+
+        for idx, chunk in enumerate(chunks):
             embedding = embedding_adapter.embed_text(chunk.content_text)
             metadata = dict(chunk.metadata or {})
             if embedding:
                 metadata['embedding'] = embedding
-            enriched.append(
-                Chunk(
-                    chunk_id=chunk.chunk_id,
-                    doc_id=chunk.doc_id,
-                    content_type=chunk.content_type,
-                    page_start=chunk.page_start,
-                    page_end=chunk.page_end,
-                    content_text=chunk.content_text,
-                    section_path=chunk.section_path,
-                    figure_id=chunk.figure_id,
-                    table_id=chunk.table_id,
-                    caption=chunk.caption,
-                    asset_ref=chunk.asset_ref,
-                    metadata=metadata,
+                embedding_success_count += 1
+            else:
+                embedding_failed_count += 1
+                embedding_failed_chunk_ids.append(chunk.chunk_id)
+                adapter_error = getattr(embedding_adapter, 'last_error', None)
+                if isinstance(adapter_error, str) and adapter_error.strip():
+                    embedding_failure_reasons[chunk.chunk_id] = adapter_error.strip()
+                else:
+                    embedding_failure_reasons[chunk.chunk_id] = 'embedding-returned-empty-vector'
+                failed_positions.append(idx)
+
+            enriched.append(_copy_chunk_with_metadata(chunk, metadata))
+
+        if failed_positions:
+            embedding_second_pass_attempted = True
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        'stage': 'embedding',
+                        'processed_pages': total_pages,
+                        'total_pages': total_pages,
+                        'message': (
+                            f'Second-pass embedding retry for {len(failed_positions)} failed chunks'
+                        ),
+                    }
                 )
-            )
+
+            normalized_retry_chars = max(0, int(embedding_second_pass_max_chars or 0))
+            for position in failed_positions:
+                failed_chunk = enriched[position]
+                retry_candidates: list[str] = []
+                if normalized_retry_chars > 0:
+                    candidate_lengths = [normalized_retry_chars, 1536, 1024, 768]
+                    seen_lengths: set[int] = set()
+                    for length in candidate_lengths:
+                        normalized_length = max(1, min(length, len(failed_chunk.content_text)))
+                        if normalized_length in seen_lengths:
+                            continue
+                        seen_lengths.add(normalized_length)
+                        retry_candidates.append(failed_chunk.content_text[:normalized_length])
+                else:
+                    retry_candidates.append(failed_chunk.content_text)
+
+                retried_embedding: list[float] = []
+                for retry_text in retry_candidates:
+                    retried_embedding = embedding_adapter.embed_text(retry_text)
+                    if retried_embedding:
+                        break
+                    adapter_error = getattr(embedding_adapter, 'last_error', None)
+                    if isinstance(adapter_error, str) and adapter_error.strip():
+                        embedding_failure_reasons[failed_chunk.chunk_id] = adapter_error.strip()
+
+                if not retried_embedding:
+                    continue
+
+                retry_metadata = dict(failed_chunk.metadata or {})
+                retry_metadata['embedding'] = retried_embedding
+                enriched[position] = _copy_chunk_with_metadata(failed_chunk, retry_metadata)
+                embedding_second_pass_recovered += 1
+                embedding_success_count += 1
+                embedding_failed_count -= 1
+                if failed_chunk.chunk_id in embedding_failed_chunk_ids:
+                    embedding_failed_chunk_ids.remove(failed_chunk.chunk_id)
+                embedding_failure_reasons.pop(failed_chunk.chunk_id, None)
         chunks = enriched
+
+        total_embedding_targets = max(len(chunks), 1)
+        embedding_coverage = embedding_success_count / total_embedding_targets
+        if embedding_second_pass_recovered > 0:
+            warnings.append(
+                f'Second-pass embedding recovered {embedding_second_pass_recovered} chunks.'
+            )
+        if embedding_failed_count > 0:
+            warnings.append(
+                f'Embedding unavailable for {embedding_failed_count}/{len(chunks)} chunks '
+                f'({embedding_coverage:.2%} coverage).'
+            )
+        min_coverage = max(0.0, min(float(embedding_min_coverage or 0.0), 1.0))
+        if embedding_fail_fast and embedding_coverage < min_coverage:
+            raise ValueError(
+                'Embedding coverage below threshold: '
+                f'{embedding_coverage:.2%} < {min_coverage:.2%}. '
+                f'Failed chunks: {len(embedding_failed_chunk_ids)}'
+            )
+    else:
+        embedding_coverage = 0.0
 
     asset_ref = chunk_store.persist(input_data.doc_id, chunks)
 
@@ -346,5 +456,14 @@ def ingest_document_use_case(
         asset_ref=asset_ref,
         total_chunks=len(chunks),
         by_type=by_type,
+        embedding_attempted=embedding_attempted,
+        embedding_success_count=embedding_success_count,
+        embedding_failed_count=embedding_failed_count,
+        embedding_coverage=round(embedding_coverage, 6) if embedding_attempted else 0.0,
+        embedding_failed_chunk_ids=embedding_failed_chunk_ids if embedding_attempted else [],
+        embedding_failure_reasons=embedding_failure_reasons if embedding_attempted else {},
+        embedding_second_pass_attempted=embedding_second_pass_attempted,
+        embedding_second_pass_recovered=embedding_second_pass_recovered,
+        warnings=warnings,
     )
 

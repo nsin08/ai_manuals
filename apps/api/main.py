@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -19,6 +20,12 @@ from packages.adapters.agentic.factory import (
 )
 from packages.adapters.agentic.langchain_tool_executor_adapter import LangChainToolDefinition
 from packages.adapters.data_contracts.yaml_catalog_adapter import YamlDocumentCatalogAdapter
+from packages.adapters.data_contracts.visual_artifact_generation import (
+    build_visual_artifacts_from_chunks,
+    load_chunk_rows,
+    write_visual_artifacts,
+)
+from packages.adapters.data_contracts.visual_artifacts import validate_visual_artifacts_for_doc
 from packages.adapters.embeddings.factory import create_embedding_adapter
 from packages.adapters.llm.factory import create_llm_adapter
 from packages.adapters.ocr.factory import create_ocr_adapter
@@ -65,6 +72,7 @@ _BOOT_CONFIG = load_config()
 JOB_MANAGER = IngestionJobManager(max_workers=_BOOT_CONFIG.ingest_concurrency)
 
 app = FastAPI(title='Equipment Manuals Chatbot API', version='0.7.0')
+INGESTION_RUNS_FILE = 'ingestion_runs.jsonl'
 
 
 def _slugify(value: str) -> str:
@@ -73,11 +81,128 @@ def _slugify(value: str) -> str:
     return slug or 'uploaded_manual'
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open('rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _ingestion_config_snapshot(cfg) -> dict[str, object]:
+    return {
+        'ocr_engine': cfg.ocr_engine,
+        'ocr_fallback_engine': cfg.ocr_fallback_engine,
+        'embedding_provider': cfg.embedding_provider,
+        'embedding_model': cfg.embedding_model,
+        'embedding_timeout_seconds': cfg.embedding_timeout_seconds,
+        'embedding_max_retries': cfg.embedding_max_retries,
+        'embedding_retry_backoff_seconds': cfg.embedding_retry_backoff_seconds,
+        'embedding_min_coverage': cfg.embedding_min_coverage,
+        'embedding_fail_fast': cfg.embedding_fail_fast,
+        'embedding_second_pass_max_chars': cfg.embedding_second_pass_max_chars,
+        'vision_enabled': cfg.use_vision_ingestion,
+        'vision_provider': cfg.vision_provider,
+        'vision_model': cfg.vision_model,
+        'vision_max_pages': cfg.vision_max_pages,
+        'ingest_page_workers': cfg.ingest_page_workers,
+        'use_agentic_mode': cfg.use_agentic_mode,
+        'agentic_provider': cfg.agentic_provider,
+    }
+
+
+def _append_ingestion_run(doc_id: str, row: dict[str, object]) -> None:
+    doc_dir = ASSETS_DIR / doc_id
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    out_path = doc_dir / INGESTION_RUNS_FILE
+    with out_path.open('a', encoding='utf-8') as fh:
+        fh.write(json.dumps(row, ensure_ascii=True))
+        fh.write('\n')
+
+
+def _load_ingestion_runs(doc_id: str, limit: int = 20) -> list[dict[str, object]]:
+    path = ASSETS_DIR / doc_id / INGESTION_RUNS_FILE
+    if not path.exists():
+        return []
+
+    rows: list[dict[str, object]] = []
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        text = raw.strip()
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    rows.reverse()
+    return rows[: max(1, limit)]
+
+
+def _read_visual_chunks(doc_id: str, limit: int = 200) -> tuple[int, list[dict[str, object]]]:
+    path = ASSETS_DIR / doc_id / 'visual_chunks.jsonl'
+    if not path.exists():
+        return 0, []
+
+    rows: list[dict[str, object]] = []
+    total = 0
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        text = raw.strip()
+        if not text:
+            continue
+        total += 1
+        if len(rows) >= max(1, limit):
+            continue
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            rows.append(payload)
+    return total, rows
+
+
+def _run_visual_artifact_pipeline(doc_id: str) -> dict[str, object]:
+    doc_dir = ASSETS_DIR / doc_id
+    chunks_path = doc_dir / 'chunks.jsonl'
+    if not chunks_path.exists():
+        return {
+            'generated': False,
+            'error': f'chunks file missing: {chunks_path}',
+            'validation': {
+                'valid': False,
+                'errors': [f'chunks file missing: {chunks_path}'],
+                'warnings': [],
+            },
+        }
+
+    chunk_rows = load_chunk_rows(chunks_path)
+    visual_rows, embedding_rows, manifest = build_visual_artifacts_from_chunks(doc_id, chunk_rows)
+    write_visual_artifacts(doc_dir, visual_rows, embedding_rows, manifest)
+    validation = validate_visual_artifacts_for_doc(doc_dir, strict=True)
+    return {
+        'generated': True,
+        'visual_chunk_count': len(visual_rows),
+        'embedding_count': len(embedding_rows),
+        'validation': {
+            'valid': validation.is_valid(),
+            'errors': validation.errors,
+            'warnings': validation.warnings,
+        },
+    }
+
+
 def _build_embedding_adapter(cfg):
     return create_embedding_adapter(
         provider=cfg.embedding_provider,
         base_url=cfg.embedding_base_url,
         model=cfg.embedding_model,
+        timeout_seconds=cfg.embedding_timeout_seconds,
+        max_retries=cfg.embedding_max_retries,
+        retry_backoff_seconds=cfg.embedding_retry_backoff_seconds,
     )
 
 
@@ -266,6 +391,81 @@ def _serialize_job(job: IngestionJob) -> dict[str, object]:
     }
 
 
+def _finalize_ingestion_outputs(
+    *,
+    cfg,
+    doc_id: str,
+    pdf_path: Path,
+    source: str,
+    filename: str | None,
+    progress_callback,
+    ingestion_result: dict[str, object],
+) -> dict[str, object]:
+    progress_callback(
+        {
+            'stage': 'visual_artifacts',
+            'processed_pages': 0,
+            'total_pages': 0,
+            'message': 'Generating visual chunk and embedding artifacts',
+        }
+    )
+    visual_artifacts = _run_visual_artifact_pipeline(doc_id)
+
+    progress_callback(
+        {
+            'stage': 'contract_validation',
+            'processed_pages': 0,
+            'total_pages': 0,
+            'message': 'Running deterministic visual artifact validation',
+        }
+    )
+
+    try:
+        pdf_sha256 = _sha256_file(pdf_path)
+    except Exception:
+        pdf_sha256 = ''
+
+    run_row = {
+        'run_id': datetime.now(UTC).strftime('%Y%m%d%H%M%S'),
+        'ts': datetime.now(UTC).isoformat(),
+        'source': source,
+        'doc_id': doc_id,
+        'filename': filename or pdf_path.name,
+        'pdf_path': str(pdf_path),
+        'pdf_sha256': pdf_sha256,
+        'config': _ingestion_config_snapshot(cfg),
+        'result': {
+            'total_chunks': int(ingestion_result.get('total_chunks') or 0),
+            'by_type': ingestion_result.get('by_type') or {},
+            'embedding_attempted': bool(ingestion_result.get('embedding_attempted', False)),
+            'embedding_success_count': int(ingestion_result.get('embedding_success_count') or 0),
+            'embedding_failed_count': int(ingestion_result.get('embedding_failed_count') or 0),
+            'embedding_coverage': float(ingestion_result.get('embedding_coverage') or 0.0),
+            'embedding_second_pass_attempted': bool(
+                ingestion_result.get('embedding_second_pass_attempted', False)
+            ),
+            'embedding_second_pass_recovered': int(
+                ingestion_result.get('embedding_second_pass_recovered') or 0
+            ),
+            'embedding_failure_reason_count': len(
+                ingestion_result.get('embedding_failure_reasons') or {}
+            ),
+            'embedding_warning_count': int(ingestion_result.get('embedding_warning_count') or 0),
+            'visual_chunk_count': int(visual_artifacts.get('visual_chunk_count') or 0),
+            'embedding_count': int(visual_artifacts.get('embedding_count') or 0),
+            'validation_valid': bool(
+                (visual_artifacts.get('validation') or {}).get('valid', False)
+            ),
+        },
+    }
+    _append_ingestion_run(doc_id, run_row)
+
+    merged = dict(ingestion_result)
+    merged['visual_artifacts'] = visual_artifacts
+    merged['ingestion_run'] = run_row
+    return merged
+
+
 def _ingest_uploaded_pdf_task(
     *,
     cfg,
@@ -278,7 +478,7 @@ def _ingest_uploaded_pdf_task(
     vision_adapter = _build_vision(cfg)
 
     def _task(progress_callback):
-        result = ingest_document_use_case(
+        ingest_output = ingest_document_use_case(
             IngestDocumentInput(doc_id=target_doc_id, pdf_path=target_path),
             pdf_parser=PypdfParserAdapter(),
             ocr_adapter=ocr_adapter,
@@ -288,16 +488,37 @@ def _ingest_uploaded_pdf_task(
             vision_adapter=vision_adapter,
             vision_max_pages=cfg.vision_max_pages,
             page_workers=cfg.ingest_page_workers,
+            embedding_min_coverage=cfg.embedding_min_coverage,
+            embedding_fail_fast=cfg.embedding_fail_fast,
+            embedding_second_pass_max_chars=cfg.embedding_second_pass_max_chars,
             progress_callback=progress_callback,
         )
-        return {
-            'doc_id': result.doc_id,
+        result_payload = {
+            'doc_id': ingest_output.doc_id,
             'filename': original_filename,
             'stored_path': str(target_path),
-            'asset_ref': result.asset_ref,
-            'total_chunks': result.total_chunks,
-            'by_type': result.by_type,
+            'asset_ref': ingest_output.asset_ref,
+            'total_chunks': ingest_output.total_chunks,
+            'by_type': ingest_output.by_type,
+            'embedding_attempted': ingest_output.embedding_attempted,
+            'embedding_success_count': ingest_output.embedding_success_count,
+            'embedding_failed_count': ingest_output.embedding_failed_count,
+            'embedding_coverage': ingest_output.embedding_coverage,
+            'embedding_second_pass_attempted': ingest_output.embedding_second_pass_attempted,
+            'embedding_second_pass_recovered': ingest_output.embedding_second_pass_recovered,
+            'embedding_failure_reasons': ingest_output.embedding_failure_reasons,
+            'embedding_warning_count': len(ingest_output.warnings),
+            'warnings': ingest_output.warnings,
         }
+        return _finalize_ingestion_outputs(
+            cfg=cfg,
+            doc_id=target_doc_id,
+            pdf_path=target_path,
+            source='upload',
+            filename=original_filename,
+            progress_callback=progress_callback,
+            ingestion_result=result_payload,
+        )
 
     return _task
 
@@ -307,13 +528,14 @@ def _ingest_catalog_pdf_task(
     cfg,
     doc_id: str,
     pdf_path: Path,
+    source: str = 'catalog',
 ):
     ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
     embedding_adapter = _build_embedding_adapter(cfg)
     vision_adapter = _build_vision(cfg)
 
     def _task(progress_callback):
-        result = ingest_document_use_case(
+        ingest_output = ingest_document_use_case(
             IngestDocumentInput(doc_id=doc_id, pdf_path=pdf_path),
             pdf_parser=PypdfParserAdapter(),
             ocr_adapter=ocr_adapter,
@@ -323,14 +545,35 @@ def _ingest_catalog_pdf_task(
             vision_adapter=vision_adapter,
             vision_max_pages=cfg.vision_max_pages,
             page_workers=cfg.ingest_page_workers,
+            embedding_min_coverage=cfg.embedding_min_coverage,
+            embedding_fail_fast=cfg.embedding_fail_fast,
+            embedding_second_pass_max_chars=cfg.embedding_second_pass_max_chars,
             progress_callback=progress_callback,
         )
-        return {
-            'doc_id': result.doc_id,
-            'asset_ref': result.asset_ref,
-            'total_chunks': result.total_chunks,
-            'by_type': result.by_type,
+        result_payload = {
+            'doc_id': ingest_output.doc_id,
+            'asset_ref': ingest_output.asset_ref,
+            'total_chunks': ingest_output.total_chunks,
+            'by_type': ingest_output.by_type,
+            'embedding_attempted': ingest_output.embedding_attempted,
+            'embedding_success_count': ingest_output.embedding_success_count,
+            'embedding_failed_count': ingest_output.embedding_failed_count,
+            'embedding_coverage': ingest_output.embedding_coverage,
+            'embedding_second_pass_attempted': ingest_output.embedding_second_pass_attempted,
+            'embedding_second_pass_recovered': ingest_output.embedding_second_pass_recovered,
+            'embedding_failure_reasons': ingest_output.embedding_failure_reasons,
+            'embedding_warning_count': len(ingest_output.warnings),
+            'warnings': ingest_output.warnings,
         }
+        return _finalize_ingestion_outputs(
+            cfg=cfg,
+            doc_id=doc_id,
+            pdf_path=pdf_path,
+            source=source,
+            filename=pdf_path.name,
+            progress_callback=progress_callback,
+            ingestion_result=result_payload,
+        )
 
     return _task
 
@@ -356,6 +599,10 @@ def health() -> dict[str, object]:
         'embedding_provider': cfg.embedding_provider,
         'embedding_model': cfg.embedding_model,
         'embedding_base_url': cfg.embedding_base_url,
+        'embedding_timeout_seconds': cfg.embedding_timeout_seconds,
+        'embedding_max_retries': cfg.embedding_max_retries,
+        'embedding_min_coverage': cfg.embedding_min_coverage,
+        'embedding_fail_fast': cfg.embedding_fail_fast,
         'use_reranker': cfg.use_reranker,
         'reranker_provider': cfg.reranker_provider,
         'reranker_model': cfg.reranker_model,
@@ -423,6 +670,20 @@ def list_ingested_docs() -> dict[str, object]:
                     except json.JSONDecodeError:
                         by_type['invalid'] = by_type.get('invalid', 0) + 1
 
+        visual_manifest_path = doc_path / 'visual_manifest.json'
+        visual_chunk_count = 0
+        visual_embedding_count = 0
+        if visual_manifest_path.exists():
+            try:
+                manifest_payload = json.loads(visual_manifest_path.read_text(encoding='utf-8'))
+                visual_chunk_count = int(manifest_payload.get('visual_chunk_count') or 0)
+                visual_embedding_count = int(manifest_payload.get('embedding_count') or 0)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                visual_chunk_count = 0
+                visual_embedding_count = 0
+
+        visual_validation = validate_visual_artifacts_for_doc(doc_path, strict=False)
+        run_history = _load_ingestion_runs(doc_path.name, limit=20)
         mtime = datetime.fromtimestamp(doc_path.stat().st_mtime, tz=UTC).isoformat()
         catalog_row = catalog_by_id.get(doc_path.name)
         docs.append(
@@ -436,6 +697,13 @@ def list_ingested_docs() -> dict[str, object]:
                 'catalog_status': catalog_row.status if catalog_row else None,
                 'catalog_filename': catalog_row.filename if catalog_row else None,
                 'catalog_title': catalog_row.title if catalog_row else None,
+                'visual_chunk_count': visual_chunk_count,
+                'visual_embedding_count': visual_embedding_count,
+                'visual_contract_valid': visual_validation.is_valid(),
+                'visual_contract_error_count': len(visual_validation.errors),
+                'visual_contract_warning_count': len(visual_validation.warnings),
+                'ingestion_run_count': len(run_history),
+                'latest_ingestion_run': run_history[0] if run_history else None,
             }
         )
 
@@ -450,6 +718,85 @@ def delete_ingested_doc(doc_id: str) -> dict[str, object]:
 
     shutil.rmtree(target)
     return {'deleted': True, 'doc_id': doc_id}
+
+
+@app.get('/ingested/{doc_id}/validation')
+def get_ingested_doc_validation(doc_id: str) -> dict[str, object]:
+    doc_dir = ASSETS_DIR / doc_id
+    if not doc_dir.exists() or not doc_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f'Ingested doc not found: {doc_id}')
+
+    relaxed = validate_visual_artifacts_for_doc(doc_dir, strict=False)
+    strict = validate_visual_artifacts_for_doc(doc_dir, strict=True)
+    total_visual_rows, _ = _read_visual_chunks(doc_id, limit=1)
+    run_history = _load_ingestion_runs(doc_id, limit=25)
+
+    visual_manifest_path = doc_dir / 'visual_manifest.json'
+    visual_manifest: dict[str, object] | None = None
+    if visual_manifest_path.exists():
+        try:
+            payload = json.loads(visual_manifest_path.read_text(encoding='utf-8'))
+            if isinstance(payload, dict):
+                visual_manifest = payload
+        except json.JSONDecodeError:
+            visual_manifest = None
+
+    return {
+        'doc_id': doc_id,
+        'visual_contract': {
+            'valid': relaxed.is_valid(),
+            'errors': relaxed.errors,
+            'warnings': relaxed.warnings,
+            'strict_valid': strict.is_valid(),
+            'strict_errors': strict.errors,
+            'strict_warnings': strict.warnings,
+        },
+        'visual_manifest': visual_manifest,
+        'visual_chunks_total': total_visual_rows,
+        'ingestion_runs': run_history,
+    }
+
+
+@app.get('/ingested/{doc_id}/visual-chunks')
+def list_visual_chunks(
+    doc_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+) -> dict[str, object]:
+    doc_dir = ASSETS_DIR / doc_id
+    if not doc_dir.exists() or not doc_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f'Ingested doc not found: {doc_id}')
+
+    total_rows, rows = _read_visual_chunks(doc_id, limit=limit)
+    return {'doc_id': doc_id, 'total': total_rows, 'limit': limit, 'rows': rows}
+
+
+@app.post('/ingested/{doc_id}/visual-artifacts/generate')
+def generate_visual_artifacts_for_doc(doc_id: str) -> dict[str, object]:
+    doc_dir = ASSETS_DIR / doc_id
+    if not doc_dir.exists() or not doc_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f'Ingested doc not found: {doc_id}')
+
+    cfg = load_config()
+    result = _run_visual_artifact_pipeline(doc_id)
+    pdf_path = _resolve_pdf_path(doc_id)
+    run_row = {
+        'run_id': datetime.now(UTC).strftime('%Y%m%d%H%M%S'),
+        'ts': datetime.now(UTC).isoformat(),
+        'source': 'visual_artifact_regen',
+        'doc_id': doc_id,
+        'filename': pdf_path.name if pdf_path else '',
+        'pdf_path': str(pdf_path) if pdf_path else '',
+        'pdf_sha256': '',
+        'config': _ingestion_config_snapshot(cfg),
+        'result': {
+            'visual_chunk_count': int(result.get('visual_chunk_count') or 0),
+            'embedding_count': int(result.get('embedding_count') or 0),
+            'validation_valid': bool((result.get('validation') or {}).get('valid', False)),
+        },
+    }
+    _append_ingestion_run(doc_id, run_row)
+
+    return {'doc_id': doc_id, 'result': result, 'ingestion_run': run_row}
 
 
 @app.get('/pdf/{doc_id}')
@@ -547,6 +894,27 @@ def ingest_catalog_job(doc_id: str) -> dict[str, object]:
     return _serialize_job(job)
 
 
+@app.post('/jobs/reingest/{doc_id}')
+def reingest_doc_job(doc_id: str) -> dict[str, object]:
+    cfg = load_config()
+    pdf_path = _resolve_pdf_path(doc_id)
+    if pdf_path is None or not pdf_path.exists():
+        raise HTTPException(status_code=404, detail=f'PDF not found for reingest doc_id: {doc_id}')
+
+    job = JOB_MANAGER.submit(
+        kind='reingest',
+        doc_id=doc_id,
+        filename=pdf_path.name,
+        task=_ingest_catalog_pdf_task(
+            cfg=cfg,
+            doc_id=doc_id,
+            pdf_path=pdf_path,
+            source='reingest',
+        ),
+    )
+    return _serialize_job(job)
+
+
 @app.post('/upload')
 async def upload_manual(
     file: UploadFile = File(...),
@@ -569,7 +937,7 @@ async def upload_manual(
     ocr_adapter = create_ocr_adapter(cfg.ocr_engine, cfg.ocr_fallback_engine)
     embedding_adapter = _build_embedding_adapter(cfg)
     vision_adapter = _build_vision(cfg)
-    result = ingest_document_use_case(
+    ingest_output = ingest_document_use_case(
         IngestDocumentInput(doc_id=target_doc_id, pdf_path=target_path),
         pdf_parser=PypdfParserAdapter(),
         ocr_adapter=ocr_adapter,
@@ -579,16 +947,36 @@ async def upload_manual(
         vision_adapter=vision_adapter,
         vision_max_pages=cfg.vision_max_pages,
         page_workers=cfg.ingest_page_workers,
+        embedding_min_coverage=cfg.embedding_min_coverage,
+        embedding_fail_fast=cfg.embedding_fail_fast,
+        embedding_second_pass_max_chars=cfg.embedding_second_pass_max_chars,
     )
-
-    return {
-        'doc_id': result.doc_id,
+    result_payload = {
+        'doc_id': ingest_output.doc_id,
         'filename': file.filename,
         'stored_path': str(target_path),
-        'asset_ref': result.asset_ref,
-        'total_chunks': result.total_chunks,
-        'by_type': result.by_type,
+        'asset_ref': ingest_output.asset_ref,
+        'total_chunks': ingest_output.total_chunks,
+        'by_type': ingest_output.by_type,
+        'embedding_attempted': ingest_output.embedding_attempted,
+        'embedding_success_count': ingest_output.embedding_success_count,
+        'embedding_failed_count': ingest_output.embedding_failed_count,
+        'embedding_coverage': ingest_output.embedding_coverage,
+        'embedding_second_pass_attempted': ingest_output.embedding_second_pass_attempted,
+        'embedding_second_pass_recovered': ingest_output.embedding_second_pass_recovered,
+        'embedding_failure_reasons': ingest_output.embedding_failure_reasons,
+        'embedding_warning_count': len(ingest_output.warnings),
+        'warnings': ingest_output.warnings,
     }
+    return _finalize_ingestion_outputs(
+        cfg=cfg,
+        doc_id=target_doc_id,
+        pdf_path=target_path,
+        source='upload_sync',
+        filename=file.filename,
+        progress_callback=lambda _payload: None,
+        ingestion_result=result_payload,
+    )
 
 
 @app.post('/ingest/{doc_id}')
@@ -614,7 +1002,7 @@ def ingest_document(doc_id: str) -> dict[str, object]:
     embedding_adapter = _build_embedding_adapter(cfg)
     vision_adapter = _build_vision(cfg)
 
-    result = ingest_document_use_case(
+    ingest_output = ingest_document_use_case(
         IngestDocumentInput(doc_id=doc_id, pdf_path=pdf_path),
         pdf_parser=PypdfParserAdapter(),
         ocr_adapter=ocr_adapter,
@@ -624,14 +1012,34 @@ def ingest_document(doc_id: str) -> dict[str, object]:
         vision_adapter=vision_adapter,
         vision_max_pages=cfg.vision_max_pages,
         page_workers=cfg.ingest_page_workers,
+        embedding_min_coverage=cfg.embedding_min_coverage,
+        embedding_fail_fast=cfg.embedding_fail_fast,
+        embedding_second_pass_max_chars=cfg.embedding_second_pass_max_chars,
     )
-
-    return {
-        'doc_id': result.doc_id,
-        'asset_ref': result.asset_ref,
-        'total_chunks': result.total_chunks,
-        'by_type': result.by_type,
+    result_payload = {
+        'doc_id': ingest_output.doc_id,
+        'asset_ref': ingest_output.asset_ref,
+        'total_chunks': ingest_output.total_chunks,
+        'by_type': ingest_output.by_type,
+        'embedding_attempted': ingest_output.embedding_attempted,
+        'embedding_success_count': ingest_output.embedding_success_count,
+        'embedding_failed_count': ingest_output.embedding_failed_count,
+        'embedding_coverage': ingest_output.embedding_coverage,
+        'embedding_second_pass_attempted': ingest_output.embedding_second_pass_attempted,
+        'embedding_second_pass_recovered': ingest_output.embedding_second_pass_recovered,
+        'embedding_failure_reasons': ingest_output.embedding_failure_reasons,
+        'embedding_warning_count': len(ingest_output.warnings),
+        'warnings': ingest_output.warnings,
     }
+    return _finalize_ingestion_outputs(
+        cfg=cfg,
+        doc_id=doc_id,
+        pdf_path=pdf_path,
+        source='catalog_sync',
+        filename=pdf_path.name,
+        progress_callback=lambda _payload: None,
+        ingestion_result=result_payload,
+    )
 
 
 @app.get('/search')

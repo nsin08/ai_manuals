@@ -237,9 +237,9 @@
 - Agent fallback rate and tool failure rate.
 
 ## Immediate Next Actions (W08 Start)
-1. Freeze golden v3 schema and acceptance criteria from `.context/project/data/golden_questions_v3.yaml`.
-2. Define visual chunk and embedding artifact contract for ingestion output.
-3. Run and archive baseline report for current ingested docs with failure taxonomy.
+- [x] Freeze golden v3 schema and acceptance criteria from `.context/project/data/golden_questions_v3.yaml`. (Evidence: `.context/reports/contract_checks/golden_v3_contract_check_20260220.json`)
+- [x] Define visual chunk and embedding artifact contract for ingestion output. (Evidence: `.context/project/ARTIFACT_CONTRACT_VISUAL_V1.md`, `packages/adapters/data_contracts/visual_artifacts.py`, `scripts/validate_visual_artifacts.py`)
+- [x] Run and archive baseline report for current ingested docs with failure taxonomy. (Evidence: `.context/reports/golden_live/20260220_011050/run_summary.json`, `.context/reports/golden_live/20260220_011050/failed_cases.csv`)
 
 ## Success Criteria Checklist (Update After Every Step)
 **Instructions**
@@ -250,46 +250,46 @@
 
 ### Global Delivery Gates (Apply to Every Work Package)
 - [ ] Product acceptance walkthrough completed.
-- [ ] Golden/reliability tests passing for targeted scope.
-- [ ] Live run report generated under `.context/reports/golden_live/<run_id>/`.
-- [ ] Architecture boundaries verified by tests.
-- [ ] Documentation and runbook updated.
+- [x] Golden/reliability tests passing for targeted scope. (Evidence: `pytest tests/unit -q` -> 55 passed, `pytest tests/integration/test_api_e2e.py -q` -> 3 passed)
+- [x] Live run report generated under `.context/reports/golden_live/<run_id>/`. (Evidence: `.context/reports/golden_live/20260220_115243/`)
+- [x] Architecture boundaries verified by tests. (Evidence: `pytest tests/unit -q` includes `tests/unit/test_architecture_boundaries.py`)
+- [x] Documentation and runbook updated. (Evidence: `.context/sprint/Sprint-multipodal-rag.md`, `.context/project/ARTIFACT_CONTRACT_VISUAL_V1.md`)
 
 ### WP-01 Multimodal Asset and Index Foundation
-- [ ] Visual chunk artifact schema finalized.
-- [ ] Visual chunk generation verified on at least 2 manuals.
-- [ ] Visual citation link integrity check passing.
+- [x] Visual chunk artifact schema finalized. (Evidence: `.context/project/ARTIFACT_CONTRACT_VISUAL_V1.md`)
+- [x] Visual chunk generation verified on at least 2 manuals. (Evidence: `.context/reports/contract_checks/visual_artifact_generation_20260220.json`)
+- [x] Visual citation link integrity check passing. (Evidence: `.context/reports/contract_checks/visual_artifact_contract_check_strict_20260220.json`)
 
 ### WP-01A Ingestion Validation UX
-- [ ] Ingestion stage timeline visible and accurate.
-- [ ] Deterministic validation gate panel implemented and verified.
-- [ ] Visual region inspector wired to chunk metadata and embedding status.
-- [ ] Re-run with identical config works and stores run history metadata.
+- [x] Ingestion stage timeline visible and accurate. (Evidence: `apps/ui/admin_main.py` `_render_stage_timeline`, job stages include `visual_artifacts` and `contract_validation`)
+- [x] Deterministic validation gate panel implemented and verified. (Evidence: `GET /ingested/{doc_id}/validation`, `apps/ui/admin_main.py` gate panel, `tests/integration/test_api_e2e.py::test_ingested_validation_and_reingest_flow`)
+- [x] Visual region inspector wired to chunk metadata and embedding status. (Evidence: `GET /ingested/{doc_id}/visual-chunks`, `apps/ui/admin_main.py` visual inspector)
+- [x] Re-run with identical config works and stores run history metadata. (Evidence: `POST /jobs/reingest/{doc_id}`, `data/assets/<doc_id>/ingestion_runs.jsonl`, `POST /ingested/{doc_id}/visual-artifacts/generate`)
 
 ### WP-02 Visual and Hybrid Retrieval
-- [ ] Visual retrieval adapter implemented and validated.
-- [ ] Hybrid retrieval returns mixed-modality hits on multimodal questions.
-- [ ] Retrieval trace includes modality-level diagnostics.
+- [x] Visual retrieval adapter implemented and validated. (Evidence: `packages/adapters/retrieval/filesystem_chunk_query_adapter.py`, `tests/unit/test_retrieval.py::test_filesystem_chunk_query_reads_visual_chunks`)
+- [x] Hybrid retrieval returns mixed-modality hits on multimodal questions. (Evidence: `.context/reports/contract_checks/wp02_retrieval_mixed_modality_20260220.json`)
+- [x] Retrieval trace includes modality-level diagnostics. (Evidence: `packages/application/use_cases/search_evidence.py`, `.context/reports/contract_checks/wp02_retrieval_trace_sample_20260220.jsonl`)
 
 ### WP-03 Agentic Multimodal Planning and Tooling
-- [ ] Planner emits modality-aware steps.
-- [ ] Tool argument validation and failures handled without crashes.
-- [ ] Graph execution budgets and fallback verified.
+- [x] Planner emits modality-aware steps. (Evidence: `packages/adapters/agentic/noop_planner_adapter.py`, `tests/unit/test_noop_planner_multimodal.py`)
+- [x] Tool argument validation and failures handled without crashes. (Evidence: `tests/unit/test_agentic_tool_validation.py`)
+- [x] Graph execution budgets and fallback verified. (Evidence: `tests/unit/test_agentic_graph_runner.py`, `tests/unit/test_answer_question_agentic.py`)
 
 ### WP-04 Structured Answer and Grounding Policy
-- [ ] Structured answer sections consistently present in eval mode.
-- [ ] Grounding gate blocks ungrounded `ok` responses.
-- [ ] Multimodal citation rendering validated.
+- [x] Structured answer sections consistently present in eval mode. (Evidence: `packages/application/use_cases/answer_question.py` `_format_eval_answer`, `packages/application/use_cases/run_golden_evaluation.py` passes `enforce_structured_output=True`, `tests/unit/test_answer_question.py::test_answer_question_enforces_structured_sections_in_eval_mode`, `tests/unit/test_golden_evaluation.py::test_run_golden_evaluation_uses_structured_output_mode`)
+- [x] Grounding gate blocks ungrounded `ok` responses. (Evidence: `packages/application/use_cases/answer_question.py` grounding fallback in `_build_answer_output`, `tests/unit/test_answer_question.py::test_answer_question_grounding_gate_demotes_ungrounded_ok`)
+- [x] Multimodal citation rendering validated. (Evidence: `packages/domain/citation_formatter.py`, `tests/unit/test_answer_question.py::test_answer_question_citation_labels_include_multimodal_refs`)
 
 ### WP-05 Golden v3 and Reliability Gates
-- [ ] Golden v3 data contracts validated.
-- [ ] KPI breakdown by question type/modality available in summary.
-- [ ] CI regression gate thresholds enforced.
+- [x] Golden v3 data contracts validated. (Evidence: `.context/reports/contract_checks/golden_v3_contract_check_20260220.json`)
+- [x] KPI breakdown by question type/modality available in summary. (Evidence: `.context/reports/golden_live/20260220_011050/run_summary.json`)
+- [x] CI regression gate thresholds enforced. (Evidence: `scripts/run_regression_gates.py` (`--min-pass-rate`, `--min-grounded-rate`, `--min-turn-execution-rate`, v3 default path), `.github/workflows/18-regression-gates.yml` gate invocation)
 
 ### WP-06 Observability and Debug Surface
-- [ ] Agent trace summary artifact generated per run.
-- [ ] Failure taxonomy report produced and reviewed.
-- [ ] Run-to-run comparison report template established.
+- [x] Agent trace summary artifact generated per run. (Evidence: `.context/reports/golden_live/20260220_011050/agent_trace_summary.json`)
+- [x] Failure taxonomy report produced and reviewed. (Evidence: `.context/reports/golden_live/20260220_011050/failed_cases.json`)
+- [x] Run-to-run comparison report template established. (Evidence: `scripts/run_baseline_golden_archive.py`, `.context/reports/golden_live/20260220_005645/`, `.context/reports/golden_live/20260220_011050/`)
 
 ### Sprint Exit Checklist (W08-W11)
 - [ ] W08 exit criteria met and signed off.

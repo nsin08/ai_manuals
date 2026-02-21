@@ -17,6 +17,18 @@ _ALIASES = {
     'parameters': 'parameter',
     'signals': 'signal',
 }
+_STOPWORDS = {
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'do', 'does', 'for', 'from',
+    'how', 'i', 'in', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'to', 'what',
+    'when', 'where', 'which', 'why', 'with',
+}
+_COMPOUND_SPLITS = {
+    'acroset': ('acro', 'set'),
+    'torqueset': ('torque', 'set'),
+    'projectaset': ('projecta', 'set'),
+    'clampset': ('clamp', 'set'),
+    'setright': ('set', 'right'),
+}
 
 
 
@@ -27,7 +39,10 @@ def _tokens(text: str) -> list[str]:
         if len(token) > 3 and token.endswith('s'):
             token = token[:-1]
         token = _ALIASES.get(token, token)
+        if token in _STOPWORDS:
+            continue
         out.append(token)
+        out.extend(_COMPOUND_SPLITS.get(token, ()))
     return out
 
 

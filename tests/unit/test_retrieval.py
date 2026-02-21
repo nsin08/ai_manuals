@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from packages.adapters.retrieval.filesystem_chunk_query_adapter import FilesystemChunkQueryAdapter
@@ -102,3 +103,90 @@ def test_filesystem_chunk_query_reads_jsonl(tmp_path: Path) -> None:
 
     assert len(chunks) == 1
     assert chunks[0].chunk_id == 'a'
+
+
+def test_filesystem_chunk_query_reads_visual_chunks(tmp_path: Path) -> None:
+    doc_dir = tmp_path / 'd1'
+    doc_dir.mkdir(parents=True)
+    (doc_dir / 'chunks.jsonl').write_text(
+        '{"chunk_id":"a","doc_id":"d1","content_type":"text","page_start":1,"page_end":1,"content_text":"hello","section_path":null,"figure_id":null,"table_id":null,"caption":null,"asset_ref":null,"metadata":{}}\n',
+        encoding='utf-8',
+    )
+    (doc_dir / 'visual_chunks.jsonl').write_text(
+        '{"chunk_id":"v1","doc_id":"d1","page":2,"region_id":"r1","bbox":[0,0,1,1],"modality":"figure","figure_id":"f1","table_id":null,"caption_text":"motor block","ocr_text":"x1 terminal","linked_text_chunk_ids":["a"],"asset_relpath":"generated/p2_r1.png"}\n',
+        encoding='utf-8',
+    )
+    (doc_dir / 'visual_embeddings.jsonl').write_text(
+        '{"chunk_id":"v1","doc_id":"d1","provider":"derived","model":"chunk","dim":3,"embedding":[0.1,0.2,0.3]}\n',
+        encoding='utf-8',
+    )
+
+    adapter = FilesystemChunkQueryAdapter(tmp_path)
+    chunks = adapter.list_chunks('d1')
+    ids = {chunk.chunk_id for chunk in chunks}
+    assert ids == {'a', 'v1'}
+    visual = next(chunk for chunk in chunks if chunk.chunk_id == 'v1')
+    assert visual.content_type == 'visual_figure'
+    assert visual.page_start == 2
+    assert isinstance(visual.metadata.get('embedding'), list)
+
+
+def test_search_evidence_trace_includes_modality_counts(tmp_path: Path) -> None:
+    chunks = [
+        Chunk(
+            chunk_id='v1',
+            doc_id='d1',
+            content_type='visual_image',
+            page_start=1,
+            page_end=1,
+            content_text='terminal wiring image',
+            metadata={'embedding': [0.2, 0.3, 0.4]},
+        ),
+        Chunk(
+            chunk_id='t1',
+            doc_id='d1',
+            content_type='text',
+            page_start=2,
+            page_end=2,
+            content_text='terminal wiring notes',
+            metadata={'embedding': [0.2, 0.3, 0.4]},
+        ),
+    ]
+    trace_file = tmp_path / 'trace.jsonl'
+    output = search_evidence_use_case(
+        SearchEvidenceInput(query='terminal wiring', top_n=2),
+        chunk_query=InMemoryChunkQuery(chunks),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+        trace_logger=RetrievalTraceLogger(trace_file),
+    )
+    assert output.hits
+    lines = [row for row in trace_file.read_text(encoding='utf-8').splitlines() if row.strip()]
+    assert lines
+    payload = json.loads(lines[-1])
+    assert 'scanned_modality_counts' in payload
+    assert 'top_hit_modality_counts' in payload
+
+
+def test_keyword_search_matches_hyphenated_compound_terms() -> None:
+    chunks = [
+        Chunk(
+            chunk_id='c1',
+            doc_id='d1',
+            content_type='text',
+            page_start=11,
+            page_end=11,
+            content_text='ACRO-SET is based on Hooke law and system spring rate.',
+        ),
+        Chunk(
+            chunk_id='c2',
+            doc_id='d1',
+            content_type='text',
+            page_start=2,
+            page_end=2,
+            content_text='What is this and what is that and it is general background text.',
+        ),
+    ]
+    results = SimpleKeywordSearchAdapter().search('what is acroset', chunks, top_k=2)
+    assert results
+    assert results[0].chunk.chunk_id == 'c1'
