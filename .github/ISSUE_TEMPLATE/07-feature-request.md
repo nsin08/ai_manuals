@@ -38,6 +38,28 @@ labels: ["type:feature-request", "state:idea"]
 
 <!-- Have you tried any workarounds? Are there other ways to solve this? -->
 
+## Acceptance Criteria
+
+<!-- How will we know this feature is working correctly? -->
+
+- [ ] 
+- [ ] 
+- [ ] 
+
+## Success Criteria
+
+<!-- Measurable outcomes that define success -->
+
+1. 
+2. 
+
+## Non-Goals
+
+<!-- What is explicitly NOT part of this feature request -->
+
+- 
+- 
+
 ## Additional context
 
 <!-- Add screenshots, mockups, links, or any other relevant information -->

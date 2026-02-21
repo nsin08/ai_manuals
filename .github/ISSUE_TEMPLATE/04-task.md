@@ -24,6 +24,20 @@ Parent: #<!-- epic-id or N/A for standalone -->
 1. [ ] 
 2. [ ] 
 
+## Success Criteria
+
+<!-- How will we know this task is successfully done? -->
+
+1. 
+2. 
+
+## Non-Goals
+
+<!-- What is explicitly out of scope for this task -->
+
+- 
+- 
+
 ## Technical Notes
 
 <!-- Any implementation details -->
