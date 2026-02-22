@@ -13,7 +13,7 @@ from packages.ports.chunk_store_port import ChunkStorePort
 from packages.ports.embedding_port import EmbeddingPort
 from packages.ports.ocr_port import OcrPort
 from packages.ports.pdf_parser_port import ParsedPdfPage, PdfParserPort
-from packages.ports.table_extractor_port import ExtractedTable, TableExtractorPort
+from packages.ports.table_extractor_port import ExtractedTable, ExtractedTableRow, TableExtractorPort
 
 
 class FakePdfParser(PdfParserPort):
@@ -32,10 +32,15 @@ class FakeOcr(OcrPort):
 
 
 class FakeTables(TableExtractorPort):
-    def extract(self, page_text: str, page_number: int) -> list[ExtractedTable]:
+    def extract(self, page_text: str, page_number: int, doc_id: str = '') -> list[ExtractedTable]:
         if page_number != 1:
             return []
-        return [ExtractedTable(table_id='table-1', page_number=1, text='A B C\\n10 20 30')]
+        row = ExtractedTableRow(
+            table_id='table-1', page_number=1, row_index=0,
+            headers=['A', 'B', 'C'], row_cells=['10', '20', '30'],
+            units=['', '', ''], raw_text='A B C\\n10 20 30'
+        )
+        return [ExtractedTable(table_id='table-1', page_number=1, rows=[row], raw_text='A B C\\n10 20 30')]
 
 
 class InMemoryChunkStore(ChunkStorePort):
@@ -89,7 +94,7 @@ def test_ingest_document_produces_expected_chunk_types() -> None:
 
     assert result.total_chunks == len(store.saved)
     assert result.by_type.get('text', 0) >= 2
-    assert result.by_type.get('table', 0) >= 1
+    assert result.by_type.get('table_row', 0) >= 1
     assert result.by_type.get('figure_caption', 0) >= 1
     assert result.by_type.get('figure_ocr', 0) >= 1
 

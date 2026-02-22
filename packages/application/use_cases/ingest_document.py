@@ -89,7 +89,16 @@ def _should_attempt_vision(*, page_text: str, page_ocr_text: str, captions: list
     compact_ocr = re.sub(r'\s+', ' ', page_ocr_text or '').strip()
     if captions:
         return True
-    if len(compact_text) < 220 and len(compact_ocr) < 220:
+    # Dimension-annotation pages: many isolated numeric callouts (e.g. CAD
+    # drawings), very few prose words.  PyPDF extracts dimension numbers as
+    # disconnected tokens — a vision model sees the full drawing and can
+    # answer dimension queries that raw text extraction misses.
+    numeric_tokens = re.findall(r'\b\d+(?:\.\d+)?\b', compact_text)
+    prose_words = re.findall(r'[A-Za-z]{4,}', compact_text)
+    if len(numeric_tokens) >= 5 and len(prose_words) <= 8:
+        return True
+    # General low-content pages (raised threshold from 220 to 400 chars).
+    if len(compact_text) < 400 and len(compact_ocr) < 400:
         return True
     return False
 
@@ -104,6 +113,7 @@ def _process_single_page(
     vision_adapter: VisionPort | None,
     vision_budget: dict[str, int],
     vision_budget_lock: Lock,
+    figure_regions: list[dict[str, Any]] | None = None,
 ) -> _PageProcessingOutput:
     page_chunks: list[Chunk] = []
     page_by_type: dict[str, int] = {}
@@ -143,22 +153,39 @@ def _process_single_page(
         )
 
     table_source_text = page_text if page_text else page_ocr_text
-    for table in table_extractor.extract(table_source_text, page.page_number):
-        add_chunk(
-            Chunk(
-                chunk_id=_new_chunk_id(),
-                doc_id=doc_id,
-                content_type='table',
-                page_start=page.page_number,
-                page_end=page.page_number,
-                content_text=table.text,
-                table_id=table.table_id,
+    for table in table_extractor.extract(table_source_text, page.page_number, doc_id):
+        for row in table.rows:
+            row_text = (
+                ' | '.join(row.headers) + ' || ' + ' | '.join(row.row_cells)
+                if row.headers
+                else ' | '.join(row.row_cells)
             )
-        )
+            add_chunk(
+                Chunk(
+                    chunk_id=_new_chunk_id(),
+                    doc_id=doc_id,
+                    content_type='table_row',
+                    page_start=page.page_number,
+                    page_end=page.page_number,
+                    content_text=row_text,
+                    table_id=row.table_id,
+                    metadata={
+                        'table_id': row.table_id,
+                        'row_index': row.row_index,
+                        'headers': row.headers,
+                        'units': row.units,
+                    },
+                )
+            )
 
     captions = _extract_figure_captions(page_text)
     for idx, caption in enumerate(captions, start=1):
         fig_id = f'fig-p{page.page_number:04d}-{idx:03d}'
+        fig_bbox = (
+            figure_regions[idx - 1].get('bbox')
+            if figure_regions and idx <= len(figure_regions)
+            else None
+        )
         add_chunk(
             Chunk(
                 chunk_id=_new_chunk_id(),
@@ -169,6 +196,7 @@ def _process_single_page(
                 content_text=caption,
                 figure_id=fig_id,
                 caption=caption,
+                metadata={'bbox': fig_bbox} if fig_bbox is not None else None,
             )
         )
 
@@ -183,6 +211,7 @@ def _process_single_page(
                     page_end=page.page_number,
                     content_text=figure_ocr_text,
                     figure_id=fig_id,
+                    metadata={'bbox': fig_bbox} if fig_bbox is not None else None,
                 )
             )
 
@@ -249,6 +278,21 @@ def ingest_document_use_case(
     by_type: dict[str, int] = {}
     total_pages = len(pages)
 
+    # Pre-extract figure bounding boxes using fitz when available.
+    page_figure_regions: dict[int, list[dict[str, Any]]] = {}
+    try:
+        from packages.adapters.data_contracts.visual_artifact_generation import (  # noqa: PLC0415
+            _extract_figure_regions as _efr,
+        )
+        import fitz as _fitz  # noqa: PLC0415
+
+        with _fitz.open(str(input_data.pdf_path)) as _doc:
+            for _fp in _doc:
+                _pn = _fp.number + 1
+                page_figure_regions[_pn] = _efr(_fp, input_data.doc_id, _pn)
+    except Exception:  # fitz/import not available or any parse error
+        pass
+
     if progress_callback is not None:
         progress_callback(
             {
@@ -276,6 +320,7 @@ def ingest_document_use_case(
                 vision_adapter=vision_adapter,
                 vision_budget=vision_budget,
                 vision_budget_lock=vision_budget_lock,
+                figure_regions=page_figure_regions.get(page.page_number),
             )
             page_outputs.append(page_output)
             if progress_callback is not None:
@@ -301,6 +346,7 @@ def ingest_document_use_case(
                     vision_adapter=vision_adapter,
                     vision_budget=vision_budget,
                     vision_budget_lock=vision_budget_lock,
+                    figure_regions=page_figure_regions.get(page.page_number),
                 )
                 for page in pages
             ]

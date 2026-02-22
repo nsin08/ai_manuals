@@ -42,4 +42,4 @@ def test_search_after_ingestion_returns_hits(tmp_path: Path) -> None:
 
     assert output.total_chunks_scanned > 0
     assert output.hits
-    assert any(hit.content_type in {'table', 'text'} for hit in output.hits)
+    assert any(hit.content_type in {'table_row', 'text'} for hit in output.hits)
