@@ -79,6 +79,151 @@ class TestTableRowChunkEmission:
         assert 'table_row' in content_types, f"Expected 'table_row' in types, got: {content_types}"
         assert 'table' not in content_types, "'table' content_type must not be emitted (removed in Phase 1)"
 
+
+class TestFigureBboxWiring:
+    """Unit tests for figure_regions -> chunk metadata wiring added in Phase 1 review cycle."""
+
+    def test_figure_caption_chunk_gets_bbox_when_figure_regions_provided(
+        self,
+        mock_ocr_adapter: MagicMock,
+        mock_vision_budget: dict[str, int],
+    ) -> None:
+        """When figure_regions contains a bbox entry, figure_caption chunk metadata must include it."""
+        from threading import Lock
+
+        # A line matching _extract_figure_captions regex: starts with 'Figure N'
+        text = "Figure 1 Pressure relief valve cross-section"
+        page = _make_page(text, number=3)
+        expected_bbox = [10.0, 20.0, 300.0, 200.0]
+        figure_regions = [
+            {'bbox': expected_bbox, 'type': 'figure', 'doc_id': 'doc1', 'page_number': 3}
+        ]
+
+        output = _process_single_page(
+            doc_id='doc1',
+            pdf_path=Path('/fake/doc1.pdf'),
+            page=page,
+            ocr_adapter=mock_ocr_adapter,
+            table_extractor=SimpleTableExtractorAdapter(),
+            vision_adapter=None,
+            vision_budget=mock_vision_budget,
+            vision_budget_lock=Lock(),
+            figure_regions=figure_regions,
+        )
+
+        caption_chunks = [c for c in output.chunks if c.content_type == 'figure_caption']
+        assert caption_chunks, "Expected at least one figure_caption chunk"
+        chunk = caption_chunks[0]
+        assert chunk.metadata is not None, "figure_caption chunk must carry metadata when bbox is available"
+        assert chunk.metadata.get('bbox') == expected_bbox, (
+            f"metadata['bbox'] must equal figure_regions[0]['bbox'], got {chunk.metadata}"
+        )
+
+    def test_figure_ocr_chunk_gets_bbox_when_figure_regions_provided(
+        self,
+        mock_ocr_adapter: MagicMock,
+        mock_vision_budget: dict[str, int],
+    ) -> None:
+        """figure_ocr chunks must also receive the bbox metadata from figure_regions."""
+        from threading import Lock
+
+        # Use a long caption text (>=80 chars) so _should_attempt_ocr returns False,
+        # preventing spontaneous page-level figure_ocr creation. The captioned path
+        # will then call extract_text per-figure and use the mock's return value.
+        text = (
+            "Figure 2 Terminal block layout showing the complete field wiring and "
+            "terminal numbering for all I/O connections on the main board assembly."
+        )
+        page = _make_page(text, number=4)
+        expected_bbox = [5.0, 15.0, 250.0, 180.0]
+        figure_regions = [{'bbox': expected_bbox, 'type': 'figure', 'doc_id': 'doc1', 'page_number': 4}]
+
+        # Mock OCR to return text for the per-figure call inside the captions loop
+        mock_ocr_adapter.extract_text.return_value = 'terminal block ocr text'
+
+        output = _process_single_page(
+            doc_id='doc1',
+            pdf_path=Path('/fake/doc1.pdf'),
+            page=page,
+            ocr_adapter=mock_ocr_adapter,
+            table_extractor=SimpleTableExtractorAdapter(),
+            vision_adapter=None,
+            vision_budget=mock_vision_budget,
+            vision_budget_lock=Lock(),
+            figure_regions=figure_regions,
+        )
+
+        # Only figure_ocr chunks tied to a figure_id carry the bbox from figure_regions
+        captioned_ocr_chunks = [
+            c for c in output.chunks
+            if c.content_type == 'figure_ocr' and c.figure_id is not None
+        ]
+        assert captioned_ocr_chunks, "Expected figure_ocr chunk with figure_id when OCR returns text"
+        chunk = captioned_ocr_chunks[0]
+        assert chunk.metadata is not None, "figure_ocr chunk must carry metadata when bbox is available"
+        assert chunk.metadata.get('bbox') == expected_bbox
+
+    def test_figure_caption_chunk_has_no_metadata_when_figure_regions_is_none(
+        self,
+        mock_ocr_adapter: MagicMock,
+        mock_vision_budget: dict[str, int],
+    ) -> None:
+        """When figure_regions is None (fitz unavailable), chunk metadata must be None."""
+        from threading import Lock
+
+        text = "Figure 3 Fan blade assembly"
+        page = _make_page(text, number=5)
+
+        output = _process_single_page(
+            doc_id='doc1',
+            pdf_path=Path('/fake/doc1.pdf'),
+            page=page,
+            ocr_adapter=mock_ocr_adapter,
+            table_extractor=SimpleTableExtractorAdapter(),
+            vision_adapter=None,
+            vision_budget=mock_vision_budget,
+            vision_budget_lock=Lock(),
+            figure_regions=None,
+        )
+
+        caption_chunks = [c for c in output.chunks if c.content_type == 'figure_caption']
+        assert caption_chunks, "Expected figure_caption chunk for Figure 3"
+        for chunk in caption_chunks:
+            assert chunk.metadata is None, (
+                f"metadata must be None when figure_regions=None, got {chunk.metadata}"
+            )
+
+    def test_figure_caption_chunk_has_no_bbox_when_figure_regions_empty_list(
+        self,
+        mock_ocr_adapter: MagicMock,
+        mock_vision_budget: dict[str, int],
+    ) -> None:
+        """When figure_regions is an empty list (page had no detected figures), metadata is None."""
+        from threading import Lock
+
+        # Two captions: only the first index is checked, empty list means no bbox for either
+        text = "Figure 4 Wiring harness"
+        page = _make_page(text, number=6)
+
+        output = _process_single_page(
+            doc_id='doc1',
+            pdf_path=Path('/fake/doc1.pdf'),
+            page=page,
+            ocr_adapter=mock_ocr_adapter,
+            table_extractor=SimpleTableExtractorAdapter(),
+            vision_adapter=None,
+            vision_budget=mock_vision_budget,
+            vision_budget_lock=Lock(),
+            figure_regions=[],
+        )
+
+        caption_chunks = [c for c in output.chunks if c.content_type == 'figure_caption']
+        assert caption_chunks, "Expected figure_caption chunk for Figure 4"
+        for chunk in caption_chunks:
+            assert chunk.metadata is None, (
+                f"metadata must be None when figure_regions=[], got {chunk.metadata}"
+            )
+
     def test_emits_one_chunk_per_table_row(
         self,
         mock_ocr_adapter: MagicMock,

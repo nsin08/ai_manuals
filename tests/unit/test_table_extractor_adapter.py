@@ -79,12 +79,20 @@ class TestExtractReturnsStructuredRows:
         assert adapter.extract('', page_number=1, doc_id='doc1') == []
         assert adapter.extract('   \n  ', page_number=1, doc_id='doc1') == []
 
-    def test_fallback_single_row_on_unparseable_input(self, adapter: SimpleTableExtractorAdapter) -> None:
+    def test_pipe_delimited_input_always_emits_rows(self, adapter: SimpleTableExtractorAdapter) -> None:
         """Pipe-delimited input must always be parsed and emit >= 1 row."""
         text = "| x |\n| y |"
         tables = adapter.extract(text, page_number=1, doc_id='doc1')
         assert tables, "Expected a table from pipe-delimited input"
         assert len(tables[0].rows) >= 1, "Expected at least one row"
+
+    def test_fallback_single_row_on_unparseable_input(self, adapter: SimpleTableExtractorAdapter) -> None:
+        """_parse_rows fallback: a single-line group is all header with no data rows, emitting one fallback row."""
+        # Call _parse_rows directly with a 1-element list so the header heuristic
+        # consumes it and data_start == len(split_lines) -> rows list is empty -> fallback fires.
+        rows = adapter._parse_rows(['A  B  C'], table_id='tbl_test', page_number=1)
+        assert len(rows) == 1, "Fallback must emit exactly one row when no data rows follow the header"
+        assert rows[0].row_cells == ['A  B  C'], "Fallback row_cells must contain the raw input text"
 
     def test_raw_text_preserved_on_table(self, adapter: SimpleTableExtractorAdapter) -> None:
         text = "H1  H2  H3\nA   B   C\nD   E   F"
