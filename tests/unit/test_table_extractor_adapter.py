@@ -80,13 +80,11 @@ class TestExtractReturnsStructuredRows:
         assert adapter.extract('   \n  ', page_number=1, doc_id='doc1') == []
 
     def test_fallback_single_row_on_unparseable_input(self, adapter: SimpleTableExtractorAdapter) -> None:
-        """When row parsing yields no data rows, emit one fallback row."""
-        # Two identical lines that trigger group detection but parse to empty cells
-        text = "abc\nabc"
+        """Pipe-delimited input must always be parsed and emit >= 1 row."""
+        text = "| x |\n| y |"
         tables = adapter.extract(text, page_number=1, doc_id='doc1')
-        if tables:
-            # If a table was detected, must have at least one row
-            assert len(tables[0].rows) >= 1
+        assert tables, "Expected a table from pipe-delimited input"
+        assert len(tables[0].rows) >= 1, "Expected at least one row"
 
     def test_raw_text_preserved_on_table(self, adapter: SimpleTableExtractorAdapter) -> None:
         text = "H1  H2  H3\nA   B   C\nD   E   F"

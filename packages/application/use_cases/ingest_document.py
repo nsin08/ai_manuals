@@ -104,6 +104,7 @@ def _process_single_page(
     vision_adapter: VisionPort | None,
     vision_budget: dict[str, int],
     vision_budget_lock: Lock,
+    figure_regions: list[dict[str, Any]] | None = None,
 ) -> _PageProcessingOutput:
     page_chunks: list[Chunk] = []
     page_by_type: dict[str, int] = {}
@@ -171,6 +172,11 @@ def _process_single_page(
     captions = _extract_figure_captions(page_text)
     for idx, caption in enumerate(captions, start=1):
         fig_id = f'fig-p{page.page_number:04d}-{idx:03d}'
+        fig_bbox = (
+            figure_regions[idx - 1].get('bbox')
+            if figure_regions and idx <= len(figure_regions)
+            else None
+        )
         add_chunk(
             Chunk(
                 chunk_id=_new_chunk_id(),
@@ -181,6 +187,7 @@ def _process_single_page(
                 content_text=caption,
                 figure_id=fig_id,
                 caption=caption,
+                metadata={'bbox': fig_bbox} if fig_bbox is not None else None,
             )
         )
 
@@ -195,6 +202,7 @@ def _process_single_page(
                     page_end=page.page_number,
                     content_text=figure_ocr_text,
                     figure_id=fig_id,
+                    metadata={'bbox': fig_bbox} if fig_bbox is not None else None,
                 )
             )
 
@@ -261,6 +269,21 @@ def ingest_document_use_case(
     by_type: dict[str, int] = {}
     total_pages = len(pages)
 
+    # Pre-extract figure bounding boxes using fitz when available.
+    page_figure_regions: dict[int, list[dict[str, Any]]] = {}
+    try:
+        from packages.adapters.data_contracts.visual_artifact_generation import (  # noqa: PLC0415
+            _extract_figure_regions as _efr,
+        )
+        import fitz as _fitz  # noqa: PLC0415
+
+        with _fitz.open(str(input_data.pdf_path)) as _doc:
+            for _fp in _doc:
+                _pn = _fp.number + 1
+                page_figure_regions[_pn] = _efr(_fp, input_data.doc_id, _pn)
+    except Exception:  # fitz/import not available or any parse error
+        pass
+
     if progress_callback is not None:
         progress_callback(
             {
@@ -288,6 +311,7 @@ def ingest_document_use_case(
                 vision_adapter=vision_adapter,
                 vision_budget=vision_budget,
                 vision_budget_lock=vision_budget_lock,
+                figure_regions=page_figure_regions.get(page.page_number),
             )
             page_outputs.append(page_output)
             if progress_callback is not None:
@@ -313,6 +337,7 @@ def ingest_document_use_case(
                     vision_adapter=vision_adapter,
                     vision_budget=vision_budget,
                     vision_budget_lock=vision_budget_lock,
+                    figure_regions=page_figure_regions.get(page.page_number),
                 )
                 for page in pages
             ]

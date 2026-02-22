@@ -89,11 +89,27 @@ class SimpleTableExtractorAdapter(TableExtractorPort):
 
         split_lines = [self._split_row(line) for line in raw_lines]
 
+        # Detect key-value tables: >= 80% of rows were split on a colon
+        # (i.e. `key: value` pattern).  Use raw_lines to verify colon origin so
+        # that regular 2-column tab/space tables are NOT mistaken for KV tables.
+        def _is_colon_split(raw: str, cells: list[str]) -> bool:
+            return (
+                len(cells) == 2
+                and ':' in raw
+                and '://' not in raw
+                and raw.split(':', 1)[0].strip() == cells[0]
+            )
+
+        kv_row_count = sum(
+            1 for raw, cells in zip(raw_lines, split_lines) if _is_colon_split(raw, cells)
+        )
+        is_kv_table = len(split_lines) > 0 and kv_row_count / len(split_lines) >= 0.8
+
         # Header detection: first row is header when >= 50% of cells are
         # non-numeric strings shorter than 30 chars.
         headers: list[str] = []
         data_start = 0
-        if split_lines:
+        if split_lines and not is_kv_table:
             candidate = split_lines[0]
             non_numeric = sum(
                 1 for c in candidate
@@ -163,7 +179,7 @@ class SimpleTableExtractorAdapter(TableExtractorPort):
         if '|' in line:
             return [c.strip() for c in line.split('|') if c.strip()]
         # Split on colon for key-value pairs
-        if ':' in line and '/' not in line.split(':')[0]:  # avoid splitting on URLs/paths
+        if ':' in line and '://' not in line:  # avoid splitting on URLs/paths
             parts = line.split(':', 1)
             if len(parts) == 2 and parts[0].strip() and parts[1].strip():
                 return [parts[0].strip(), parts[1].strip()]
