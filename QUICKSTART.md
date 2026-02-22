@@ -145,7 +145,19 @@ python scripts/run_reliability_eval.py --use-llm-answering --llm-provider local 
 
 ## 7. Reset Data
 
-### Soft reset (remove ingested chunks/uploads only)
+### Quickest way: Use cleanup script
+
+```powershell
+# Soft reset (keep DB, clear chunks, restart):
+.\scripts\reset_local_state.ps1 -Soft
+
+# Full reset (remove DB + volumes, clear filesystem, restart):
+.\scripts\reset_local_state.ps1 -Full
+```
+
+### Manual cleanup
+
+**Soft reset (remove ingested chunks/uploads only)**
 
 Keep containers running. Remove filesystem chunks:
 
@@ -160,7 +172,7 @@ docker compose -f infra/docker-compose.yml restart worker api
 
 Then re-ingest docs.
 
-### Full reset (containers + DB volumes + filesystem storage)
+**Full reset (containers + DB volumes + filesystem storage)**
 
 ⚠️ **REQUIRED after Phase 1 upgrade** (schema change: table → table_row)
 
