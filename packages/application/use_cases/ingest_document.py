@@ -143,18 +143,30 @@ def _process_single_page(
         )
 
     table_source_text = page_text if page_text else page_ocr_text
-    for table in table_extractor.extract(table_source_text, page.page_number):
-        add_chunk(
-            Chunk(
-                chunk_id=_new_chunk_id(),
-                doc_id=doc_id,
-                content_type='table',
-                page_start=page.page_number,
-                page_end=page.page_number,
-                content_text=table.text,
-                table_id=table.table_id,
+    for table in table_extractor.extract(table_source_text, page.page_number, doc_id):
+        for row in table.rows:
+            row_text = (
+                ' | '.join(row.headers) + ' || ' + ' | '.join(row.row_cells)
+                if row.headers
+                else ' | '.join(row.row_cells)
             )
-        )
+            add_chunk(
+                Chunk(
+                    chunk_id=_new_chunk_id(),
+                    doc_id=doc_id,
+                    content_type='table_row',
+                    page_start=page.page_number,
+                    page_end=page.page_number,
+                    content_text=row_text,
+                    table_id=row.table_id,
+                    metadata={
+                        'table_id': row.table_id,
+                        'row_index': row.row_index,
+                        'headers': row.headers,
+                        'units': row.units,
+                    },
+                )
+            )
 
     captions = _extract_figure_captions(page_text)
     for idx, caption in enumerate(captions, start=1):

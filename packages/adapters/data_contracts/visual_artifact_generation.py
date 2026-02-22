@@ -4,6 +4,71 @@ import json
 from pathlib import Path
 from typing import Any
 
+try:
+    import fitz  # PyMuPDF — optional; only needed for live PDF bbox extraction
+    _FITZ_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    fitz = None  # type: ignore[assignment]
+    _FITZ_AVAILABLE = False
+
+
+def _extract_figure_regions(page: 'fitz.Page', doc_id: str, page_num: int) -> list[dict[str, Any]]:
+    """Extract raster-image regions (type==1 blocks) with normalized bbox.
+
+    Normalizes raw PyMuPDF point coordinates to [0, 1] range relative to page
+    dimensions so coordinates are device-independent and portable to the UI layer.
+
+    Args:
+        page: fitz.Page object for the PDF page.
+        doc_id: Document identifier used to build the figure_id.
+        page_num: 1-based page number.
+
+    Returns:
+        List of dicts with keys: figure_id, bbox (4 floats [0,1]), page_number.
+    """
+    if not _FITZ_AVAILABLE:
+        return []
+    w, h = page.rect.width, page.rect.height
+    if w <= 0 or h <= 0:
+        return []
+    regions: list[dict[str, Any]] = []
+    for idx, block in enumerate(page.get_text('dict')['blocks']):
+        if block.get('type') != 1:  # 1 == raster image block
+            continue
+        x0, y0, x1, y1 = block['bbox']
+        norm_bbox = [
+            round(x0 / w, 4),
+            round(y0 / h, 4),
+            round(x1 / w, 4),
+            round(y1 / h, 4),
+        ]
+        figure_id = f'fig_{doc_id}_p{page_num:04d}_{idx:03d}'
+        regions.append({'figure_id': figure_id, 'bbox': norm_bbox, 'page_number': page_num})
+    return regions
+
+
+def _bbox_from_text_block(block: dict[str, Any], page: 'fitz.Page') -> list[float]:
+    """Normalize a text-block bbox (for table region metadata injection into chunks).
+
+    Raw PyMuPDF bbox is in points (x0, y0, x1, y1).  Normalizes to [0, 1]
+    using page.rect.width / height so they are device-independent.
+
+    Args:
+        block: A single block dict from page.get_text('dict')['blocks'].
+        page: The fitz.Page the block belongs to.
+
+    Returns:
+        4-element list of floats, each in [0, 1].
+    """
+    w, h = page.rect.width, page.rect.height
+    x0, y0, x1, y1 = block['bbox']
+    return [
+        round(x0 / w, 4),
+        round(y0 / h, 4),
+        round(x1 / w, 4),
+        round(y1 / h, 4),
+    ]
+
 
 def _is_numeric_list(value: object) -> bool:
     if not isinstance(value, list) or not value:
@@ -45,7 +110,7 @@ def build_visual_artifacts_from_chunks(
     visual_index = 0
     for row in chunk_rows:
         content_type = str(row.get('content_type') or '').strip().lower()
-        if content_type not in {'figure_caption', 'figure_ocr', 'vision_summary', 'table'}:
+        if content_type not in {'figure_caption', 'figure_ocr', 'vision_summary', 'table', 'table_row'}:
             continue
 
         original_chunk_id = str(row.get('chunk_id') or '').strip()
@@ -59,7 +124,7 @@ def build_visual_artifacts_from_chunks(
         figure_id = row.get('figure_id')
         table_id = row.get('table_id')
 
-        modality = 'table' if content_type == 'table' else ('figure' if 'figure' in content_type else 'image')
+        modality = 'table' if content_type in {'table', 'table_row'} else ('figure' if 'figure' in content_type else 'image')
         region_id = (
             str(figure_id).strip()
             if figure_id
@@ -78,7 +143,7 @@ def build_visual_artifacts_from_chunks(
                 'doc_id': doc_id,
                 'page': page,
                 'region_id': region_id,
-                'bbox': [0, 0, 1, 1],
+                'bbox': (row.get('metadata') or {}).get('bbox') or [0, 0, 1, 1],
                 'modality': modality,
                 'figure_id': figure_id,
                 'table_id': table_id,
