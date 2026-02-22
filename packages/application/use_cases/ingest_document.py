@@ -89,7 +89,16 @@ def _should_attempt_vision(*, page_text: str, page_ocr_text: str, captions: list
     compact_ocr = re.sub(r'\s+', ' ', page_ocr_text or '').strip()
     if captions:
         return True
-    if len(compact_text) < 220 and len(compact_ocr) < 220:
+    # Dimension-annotation pages: many isolated numeric callouts (e.g. CAD
+    # drawings), very few prose words.  PyPDF extracts dimension numbers as
+    # disconnected tokens — a vision model sees the full drawing and can
+    # answer dimension queries that raw text extraction misses.
+    numeric_tokens = re.findall(r'\b\d+(?:\.\d+)?\b', compact_text)
+    prose_words = re.findall(r'[A-Za-z]{4,}', compact_text)
+    if len(numeric_tokens) >= 5 and len(prose_words) <= 8:
+        return True
+    # General low-content pages (raised threshold from 220 to 400 chars).
+    if len(compact_text) < 400 and len(compact_ocr) < 400:
         return True
     return False
 
