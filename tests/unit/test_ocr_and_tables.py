@@ -32,7 +32,7 @@ def test_table_extractor_detects_key_value_rows() -> None:
 
     tables = SimpleTableExtractorAdapter().extract(page_text, page_number=1)
     assert tables
-    assert 'Torque | 45 Nm' in tables[0].text
+    assert 'Torque | 45 Nm' in tables[0].raw_text
 
 
 
@@ -47,4 +47,4 @@ def test_table_extractor_detects_multicolumn_rows() -> None:
 
     tables = SimpleTableExtractorAdapter().extract(page_text, page_number=2)
     assert tables
-    assert 'Parameter | Value | Unit' in tables[0].text
+    assert 'Parameter | Value | Unit' in tables[0].raw_text

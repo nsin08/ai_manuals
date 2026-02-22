@@ -52,7 +52,19 @@ class SimpleTableExtractorAdapter(TableExtractorPort):
                 else f'table-p{page_number:04d}-{table_idx:03d}'
             )
             rows = self._parse_rows(group, table_id=table_id, page_number=page_number)
-            raw_text = '\n'.join(group)
+            # Reconstruct raw_text from parsed rows with | separators (if rows exist)
+            # Fallback to original group text if no rows.
+            if rows:
+                raw_lines = []
+                for row in rows:
+                    if row.headers:
+                        # Include headers on first row
+                        raw_lines.append(' | '.join(row.headers) + ' || ' + ' | '.join(row.row_cells))
+                    else:
+                        raw_lines.append(' | '.join(row.row_cells))
+                raw_text = '\n'.join(raw_lines)
+            else:
+                raw_text = '\n'.join(group)
             tables.append(
                 ExtractedTable(
                     table_id=table_id,
@@ -147,8 +159,13 @@ class SimpleTableExtractorAdapter(TableExtractorPort):
 
     @staticmethod
     def _split_row(line: str) -> list[str]:
-        """Split a row on pipe or 2+ spaces."""
+        """Split a row on pipe, colon (key-value), or 2+ spaces."""
         if '|' in line:
-            return [c for c in line.split('|') if c.strip()]
+            return [c.strip() for c in line.split('|') if c.strip()]
+        # Split on colon for key-value pairs
+        if ':' in line and '/' not in line.split(':')[0]:  # avoid splitting on URLs/paths
+            parts = line.split(':', 1)
+            if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+                return [parts[0].strip(), parts[1].strip()]
         cols = re.split(r'\s{2,}', line)
-        return [c for c in cols if c.strip()] or [line]
+        return [c.strip() for c in cols if c.strip()] or [line]
