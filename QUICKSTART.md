@@ -163,6 +163,35 @@ Remove-Item -Recurse -Force data\uploads\*
 docker compose -f infra/docker-compose.yml up --build -d
 ```
 
+### Phase 1 Upgrade (Table & Diagram Fidelity)
+
+**⚠️ Breaking change to chunk schema:** Phase 1 replaces `content_type='table'` with `content_type='table_row'` and adds structured metadata (row_index, headers, units, bbox).
+
+**Do this after merging Phase 1:**
+
+```powershell
+# Full reset to clear incompatible chunks:
+docker compose -f infra/docker-compose.yml down -v
+Remove-Item -Recurse -Force data\assets\*
+Remove-Item -Recurse -Force data\uploads\*
+
+# Restart:
+docker compose -f infra/docker-compose.yml up --build -d
+
+# Re-ingest all manuals with Phase 1 support:
+python scripts/run_ingestion.py --doc-id siemens_g120_basic_positioner
+python scripts/run_ingestion.py --doc-id rockwell_powerflex_40
+python scripts/run_ingestion.py --doc-id timken_bearing_setting
+
+# Test retrieval with table queries:
+python scripts/run_retrieval.py --query "fault code table corrective" --doc-id siemens_g120_basic_positioner
+```
+
+Expected improvements:
+- Table rows are now structured (headers, cells, units) instead of flat text
+- Figure regions have bounding boxes for precise citation
+- Better recall on spec table and fault code queries
+
 ## 8. Useful Health Checks
 
 ```powershell
