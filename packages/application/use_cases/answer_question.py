@@ -9,11 +9,13 @@ from packages.application.agentic.state import AgenticAnswerState
 from packages.application.use_cases.search_evidence import (
     EvidenceHit,
     SearchEvidenceInput,
+    SearchEvidenceOutput,  # noqa: F401 – kept for type clarity
+    _compute_evidence_coverage,
     search_evidence_use_case,
 )
 from packages.domain.citation_formatter import format_citation
 from packages.domain.models import Answer, Citation
-from packages.domain.policies import has_minimum_citation_fields, is_answer_grounded
+from packages.domain.policies import has_minimum_citation_fields, has_sufficient_evidence, is_answer_grounded
 from packages.ports.agent_trace_port import AgentTracePort
 from packages.ports.chunk_query_port import ChunkQueryPort
 from packages.ports.keyword_search_port import KeywordSearchPort
@@ -89,7 +91,7 @@ class AnswerQuestionOutput:
     query: str
     intent: str
     status: str
-    confidence: str
+    confidence: float  # 0.0..1.0 — evidence coverage score
     answer: str
     follow_up_question: str | None
     warnings: list[str]
@@ -97,6 +99,7 @@ class AnswerQuestionOutput:
     retrieved_chunk_ids: list[str]
     citations: list[AnswerCitationOutput]
     reasoning_summary: str | None = None
+    abstain: bool = False  # True when coverage < 0.50 threshold
 
 
 def _tokens(text: str) -> set[str]:
@@ -501,6 +504,7 @@ def _build_answer_output(
     intent: str,
     doc_id: str | None,
     hits: list[EvidenceHit],
+    coverage_score: float,
     total_chunks_scanned: int,
     retrieved_chunk_ids: list[str],
     answer_text_override: str | None,
@@ -521,7 +525,8 @@ def _build_answer_output(
     if not answer_text:
         answer_text = _compose_answer_text(hits)
 
-    if _is_insufficient_evidence(query, hits):
+    abstain = not has_sufficient_evidence(coverage_score)
+    if abstain:
         status = 'not_found'
         answer_text = _compose_related_evidence_text(hits)
         warnings.append('Insufficient evidence to provide a grounded direct answer.')
@@ -583,7 +588,7 @@ def _build_answer_output(
             metadata=answer_model.metadata,
         )
 
-    confidence = _confidence_from_hits(query, hits, status)
+    confidence = round(max(0.0, min(1.0, coverage_score)), 4)
 
     citation_payload = [
         AnswerCitationOutput(
@@ -609,6 +614,7 @@ def _build_answer_output(
         retrieved_chunk_ids=retrieved_chunk_ids,
         citations=citation_payload,
         reasoning_summary=reasoning_summary,
+        abstain=abstain,
     )
 
 
@@ -701,11 +707,13 @@ def answer_question_use_case(
             if graph_output.terminated_reason != 'completed':
                 warnings_seed.append(f'Agentic run terminated: {graph_output.terminated_reason}')
 
+            coverage_score = _compute_evidence_coverage(input_data.query.strip(), hits)
             output = _build_answer_output(
                 query=input_data.query.strip(),
                 intent=state.intent or 'general',
                 doc_id=input_data.doc_id,
                 hits=hits,
+                coverage_score=coverage_score,
                 total_chunks_scanned=state.total_chunks_scanned,
                 retrieved_chunk_ids=state.retrieved_chunk_ids or [h.chunk_id for h in hits],
                 answer_text_override=state.answer_draft,
@@ -763,6 +771,7 @@ def answer_question_use_case(
         intent=evidence.intent,
         doc_id=input_data.doc_id,
         hits=evidence.hits,
+        coverage_score=evidence.coverage_score,
         total_chunks_scanned=evidence.total_chunks_scanned,
         retrieved_chunk_ids=[h.chunk_id for h in evidence.hits],
         answer_text_override=None,

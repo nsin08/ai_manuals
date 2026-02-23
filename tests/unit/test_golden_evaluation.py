@@ -116,7 +116,7 @@ def test_run_golden_evaluation_uses_structured_output_mode(monkeypatch, tmp_path
             query='What is the torque value?',
             intent='general',
             status='ok',
-            confidence='medium',
+            confidence=0.75,
             answer=(
                 'Direct answer: Torque value is 45 Nm.\n'
                 'Key details:\n'

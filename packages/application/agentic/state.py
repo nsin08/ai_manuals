@@ -23,7 +23,7 @@ class AgenticAnswerState:
     citations: list[dict[str, Any]] = field(default_factory=list)
     retrieved_chunk_ids: list[str] = field(default_factory=list)
     total_chunks_scanned: int = 0
-    confidence: str = 'low'
+    confidence: float = 0.0  # 0.0..1.0 evidence coverage score
     reasoning_summary: str | None = None
     errors: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -73,7 +73,7 @@ class AgenticAnswerState:
             citations=list(payload.get('citations') or []),
             retrieved_chunk_ids=[str(item) for item in payload.get('retrieved_chunk_ids') or []],
             total_chunks_scanned=int(payload.get('total_chunks_scanned') or 0),
-            confidence=str(payload.get('confidence') or 'low'),
+            confidence=float(payload['confidence']) if isinstance(payload.get('confidence'), (int, float)) else 0.0,
             reasoning_summary=payload.get('reasoning_summary'),
             errors=[str(item) for item in payload.get('errors') or []],
             metadata=dict(payload.get('metadata') or {}),

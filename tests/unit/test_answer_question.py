@@ -140,12 +140,7 @@ def test_answer_question_grounding_gate_demotes_ungrounded_ok(monkeypatch) -> No
         _ = hits, limit
         return []
 
-    def _force_sufficient_evidence(query, hits):
-        _ = query, hits
-        return False
-
     monkeypatch.setattr(answer_question_module, '_build_citations', _force_empty_citations)
-    monkeypatch.setattr(answer_question_module, '_is_insufficient_evidence', _force_sufficient_evidence)
 
     output = answer_question_use_case(
         AnswerQuestionInput(query='What is the torque specification in Nm?', doc_id='d1'),

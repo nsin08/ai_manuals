@@ -1,7 +1,8 @@
 ﻿from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -44,6 +45,8 @@ class SearchEvidenceOutput:
     intent: str
     total_chunks_scanned: int
     hits: list[EvidenceHit]
+    coverage_score: float = 0.0
+    modality_hit_counts: dict[str, int] = field(default_factory=dict)
 
 
 class TraceLoggerPort(Protocol):
@@ -58,6 +61,10 @@ TABLE_TERMS = {
 DIAGRAM_TERMS = {
     'diagram', 'schematic', 'wiring', 'terminal', 'pin', 'connector', 'figure',
     'signal', 'block diagram', 'connection'
+}
+PROCEDURE_TERMS = {
+    'steps', 'procedure', 'how to', 'install', 'configure', 'setup',
+    'commissioning', 'wiring', 'connect', 'sequence', 'operation', 'startup',
 }
 _QUERY_EXPANSIONS = {
     'vs': 'versus',
@@ -78,15 +85,30 @@ _FUSION_RRF_K = 60
 _FUSION_RRF_MIX = 0.35
 
 
+def _term_in_query(term: str, query: str) -> bool:
+    """Check whether a term appears in a (lowercased) query string.
+
+    Multi-word phrases use plain substring matching (they are already specific
+    enough to avoid false positives).  Single-word terms require a word-START
+    boundary so that, for example, 'figure' does not match inside 'configure'.
+    """
+    if ' ' in term:
+        return term in query
+    return bool(re.search(r'\b' + re.escape(term), query))
+
+
 def _detect_intent(query: str) -> str:
     q = query.lower()
-    table_hits = sum(1 for term in TABLE_TERMS if term in q)
-    diagram_hits = sum(1 for term in DIAGRAM_TERMS if term in q)
+    table_hits = sum(1 for term in TABLE_TERMS if _term_in_query(term, q))
+    diagram_hits = sum(1 for term in DIAGRAM_TERMS if _term_in_query(term, q))
+    procedure_hits = sum(1 for term in PROCEDURE_TERMS if _term_in_query(term, q))
 
-    if table_hits > 0 and table_hits >= diagram_hits:
+    if table_hits > 0 and table_hits >= diagram_hits and table_hits >= procedure_hits:
         return 'table'
-    if diagram_hits > 0:
+    if diagram_hits > 0 and diagram_hits >= procedure_hits:
         return 'diagram'
+    if procedure_hits > 0:
+        return 'procedure'
     return 'general'
 
 
@@ -126,6 +148,30 @@ def _anchor_terms(query: str) -> list[str]:
             continue
         out.append(token)
     return sorted(set(out))
+
+
+_COVERAGE_STOP_WORDS = {
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'do', 'does',
+    'for', 'from', 'how', 'i', 'in', 'is', 'it', 'mean', 'means',
+    'of', 'on', 'or', 'should', 'that', 'the', 'to', 'what',
+    'when', 'where', 'which', 'why', 'with',
+}
+
+
+def _compute_evidence_coverage(query: str, hits: list[EvidenceHit]) -> float:
+    """Token-level coverage: fraction of non-stop query tokens found in any hit."""
+    if not hits:
+        return 0.0
+    # Use _WORD_RE to extract alphanumeric tokens (strips punctuation before filtering)
+    query_tokens = set(_WORD_RE.findall(query.lower())) - _COVERAGE_STOP_WORDS
+    if not query_tokens:
+        return 1.0  # trivial query, assume covered
+    covered = sum(
+        1
+        for token in query_tokens
+        if any(token in hit.snippet.lower() for hit in hits)
+    )
+    return round(covered / len(query_tokens), 4)
 
 
 def _anchor_coverage(text: str, anchors: list[str]) -> float:
@@ -183,6 +229,11 @@ def _content_type_weight(content_type: str, intent: str) -> float:
             return 1.10
         if is_visual:
             return 1.20
+    if intent == 'procedure':
+        if content_type == 'text':
+            return 1.30
+        if content_type == 'table_row':
+            return 0.80
     return 1.0
 
 
@@ -274,6 +325,8 @@ def search_evidence_use_case(
             intent='general',
             total_chunks_scanned=0,
             hits=[],
+            coverage_score=0.0,
+            modality_hit_counts={},
         )
 
     chunks = chunk_query.list_chunks(doc_id=input_data.doc_id)
@@ -371,6 +424,21 @@ def search_evidence_use_case(
             pool_size=input_data.rerank_pool_size,
         )
 
+    # Stable modality diversity promotion: ensure top results include ≥2
+    # content_type varieties when the pool allows it.  Only for multimodal
+    # intents; procedure queries are expected to be text-only.
+    if intent in ('table', 'diagram', 'general') and len(hits) >= 5:
+        modalities_seen: set[str] = set()
+        diverse: list[EvidenceHit] = []
+        remainder: list[EvidenceHit] = []
+        for hit in hits:
+            if hit.content_type not in modalities_seen and len(modalities_seen) < 2:
+                diverse.append(hit)
+                modalities_seen.add(hit.content_type)
+            else:
+                remainder.append(hit)
+        hits = diverse + remainder
+
     top_hits = hits[: input_data.top_n]
 
     if trace_logger is not None:
@@ -418,9 +486,14 @@ def search_evidence_use_case(
             }
         )
 
+    coverage_score = _compute_evidence_coverage(query, top_hits)
+    modality_hit_counts: dict[str, int] = dict(Counter(h.content_type for h in top_hits))
+
     return SearchEvidenceOutput(
         query=query,
         intent=intent,
         total_chunks_scanned=len(chunks),
         hits=top_hits,
+        coverage_score=coverage_score,
+        modality_hit_counts=modality_hit_counts,
     )
