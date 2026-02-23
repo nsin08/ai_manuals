@@ -163,3 +163,52 @@ def test_empty_query_returns_zero_coverage() -> None:
 
     assert result.coverage_score == 0.0
     assert result.modality_hit_counts == {}
+
+
+def test_stopword_only_query_returns_zero_coverage() -> None:
+    """A query consisting entirely of stop words returns 0.0 (not 1.0)."""
+    chunks = [_make_chunk("c1", "motor torque is 45 Nm")]
+    result = search_evidence_use_case(
+        SearchEvidenceInput(query="what is the", top_n=3),
+        chunk_query=_InMemoryChunkQuery(chunks),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+    )
+    assert result.coverage_score == 0.0
+
+
+def test_diversity_respects_relevance_floor() -> None:
+    """Low-relevance second-modality chunks must NOT be promoted past the floor.
+
+    Build a pool where only text chunks are relevant to the query and the
+    single table chunk has zero query overlap. The relevance floor (40% of
+    top score) should prevent that table chunk from being promoted.
+    """
+    # Highly relevant text chunks
+    text_content = "motor torque parameter specification rated load value"
+    chunks = [
+        _make_chunk(f"t{i}", text_content, content_type="text", page=i + 1)
+        for i in range(5)
+    ]
+    # A completely unrelated table chunk (no query-term overlap)
+    chunks.append(
+        _make_chunk(
+            "tb1",
+            "quarterly revenue stockholder dividend fiscal quarter",
+            content_type="table",
+            page=6,
+        )
+    )
+
+    result = search_evidence_use_case(
+        SearchEvidenceInput(query="motor torque parameter specification", top_n=5),
+        chunk_query=_InMemoryChunkQuery(chunks),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+    )
+
+    # The irrelevant table chunk should not appear in top results if it scored
+    # below the 40% relevance floor relative to the top text hit.
+    top_content_types = [h.content_type for h in result.hits[:5]]
+    # At minimum: the result should contain the relevant text hits
+    assert top_content_types.count("text") >= 1

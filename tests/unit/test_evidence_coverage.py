@@ -58,11 +58,15 @@ def test_coverage_in_unit_range() -> None:
     assert 0.0 <= result <= 1.0
 
 
-def test_coverage_one_for_trivial_stop_word_only_query() -> None:
-    """Query that reduces to empty after stop-word removal should return 1.0."""
+def test_coverage_zero_for_trivial_stop_word_only_query() -> None:
+    """Query that reduces to empty after stop-word removal should return 0.0.
+
+    Returning 0.0 (not 1.0) prevents trivial queries from producing
+    misleadingly high confidence via has_sufficient_evidence().
+    """
     hits = [_make_hit("some content")]
     result = _compute_evidence_coverage("what is the", hits)
-    assert result == 1.0
+    assert result == 0.0
 
 
 def test_coverage_aggregates_across_multiple_hits() -> None:
@@ -81,3 +85,20 @@ def test_coverage_rounded_to_four_decimal_places() -> None:
     hits = [_make_hit("alpha content")]
     result = _compute_evidence_coverage("alpha beta gamma", hits)
     assert result == round(1 / 3, 4)
+
+
+# ── word-boundary matching ────────────────────────────────────────────────────
+def test_coverage_uses_word_boundary_not_substring() -> None:
+    """Token 'ram' must not be counted as covered by a snippet containing 'program'."""
+    hits = [_make_hit("program settings listed here")]
+    # 'ram' is a word-token of 'program' via substring, but NOT a discrete word
+    result = _compute_evidence_coverage("ram capacity", hits)
+    # Neither 'ram' nor 'capacity' appears as a standalone word → 0.0
+    assert result == 0.0
+
+
+def test_coverage_exact_word_match_counts() -> None:
+    """Token 'ram' is covered when it appears as a standalone word in the snippet."""
+    hits = [_make_hit("total ram capacity is 512 mb")]
+    result = _compute_evidence_coverage("ram capacity", hits)
+    assert result == 1.0

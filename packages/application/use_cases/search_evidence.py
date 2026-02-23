@@ -159,17 +159,27 @@ _COVERAGE_STOP_WORDS = {
 
 
 def _compute_evidence_coverage(query: str, hits: list[EvidenceHit]) -> float:
-    """Token-level coverage: fraction of non-stop query tokens found in any hit."""
+    """Token-level coverage: fraction of non-stop query tokens found in any hit.
+
+    Uses word-boundary tokenisation on both query and snippet to prevent
+    substring false-positives (e.g. query token 'ram' matching 'program').
+    Returns 0.0 when no informative (non-stop-word) query tokens remain so
+    that trivial queries do not produce misleadingly high confidence.
+    """
     if not hits:
         return 0.0
-    # Use _WORD_RE to extract alphanumeric tokens (strips punctuation before filtering)
+    # Strip punctuation and filter stop words
     query_tokens = set(_WORD_RE.findall(query.lower())) - _COVERAGE_STOP_WORDS
     if not query_tokens:
-        return 1.0  # trivial query, assume covered
+        # No informative tokens — coverage is undefined; return 0.0 rather
+        # than 1.0 to avoid inflating confidence for low-information queries.
+        return 0.0
+    # Build per-hit token sets once to avoid repeated regex calls
+    hit_token_sets = [set(_WORD_RE.findall(hit.snippet.lower())) for hit in hits]
     covered = sum(
         1
         for token in query_tokens
-        if any(token in hit.snippet.lower() for hit in hits)
+        if any(token in token_set for token_set in hit_token_sets)
     )
     return round(covered / len(query_tokens), 4)
 
@@ -427,12 +437,20 @@ def search_evidence_use_case(
     # Stable modality diversity promotion: ensure top results include ≥2
     # content_type varieties when the pool allows it.  Only for multimodal
     # intents; procedure queries are expected to be text-only.
+    # A relevance floor (40% of the top hit's score) prevents low-ranked
+    # chunks from being promoted ahead of highly relevant single-modality hits.
     if intent in ('table', 'diagram', 'general') and len(hits) >= 5:
+        top_score = hits[0].score if hits else 0.0
+        relevance_floor = top_score * 0.40
         modalities_seen: set[str] = set()
         diverse: list[EvidenceHit] = []
         remainder: list[EvidenceHit] = []
         for hit in hits:
-            if hit.content_type not in modalities_seen and len(modalities_seen) < 2:
+            if (
+                hit.content_type not in modalities_seen
+                and len(modalities_seen) < 2
+                and hit.score >= relevance_floor
+            ):
                 diverse.append(hit)
                 modalities_seen.add(hit.content_type)
             else:
