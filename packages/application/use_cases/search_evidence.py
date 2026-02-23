@@ -168,7 +168,7 @@ def _rrf_component(rank: int | None, weight: float) -> float:
 def _content_type_weight(content_type: str, intent: str) -> float:
     is_visual = content_type.startswith('visual_')
     if intent == 'table':
-        if content_type in {'table', 'visual_table'}:
+        if content_type in {'table', 'table_row', 'visual_table'}:
             return 1.35
         if content_type in {'figure_ocr', 'figure_caption', 'vision_summary'}:
             return 1.10
@@ -179,7 +179,7 @@ def _content_type_weight(content_type: str, intent: str) -> float:
             return 1.40
         if content_type in {'visual_figure', 'visual_image'}:
             return 1.40
-        if content_type == 'table':
+        if content_type in {'table', 'table_row'}:
             return 1.10
         if is_visual:
             return 1.20
@@ -196,7 +196,7 @@ def _snippet(text: str, max_len: int = 420) -> str:
 def _modality_bucket(content_type: str) -> str:
     if content_type.startswith('visual_'):
         return 'visual'
-    if content_type == 'table':
+    if content_type in {'table', 'table_row'}:
         return 'table'
     if content_type in {'figure_ocr', 'figure_caption', 'vision_summary'}:
         return 'figure_text'

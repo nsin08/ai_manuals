@@ -145,23 +145,81 @@ python scripts/run_reliability_eval.py --use-llm-answering --llm-provider local 
 
 ## 7. Reset Data
 
-### Soft reset (remove ingested chunks/uploads)
+### Quickest way: Use cleanup script
 
 ```powershell
-Remove-Item -Recurse -Force data\assets\*
-Remove-Item -Recurse -Force data\uploads\*
+# Soft reset (keep DB, clear chunks, restart):
+.\scripts\reset_local_state.ps1 -Soft
+
+# Full reset (remove DB + volumes, clear filesystem, restart):
+.\scripts\reset_local_state.ps1 -Full
+```
+
+### Manual cleanup
+
+**Soft reset (remove ingested chunks/uploads only)**
+
+Keep containers running. Remove filesystem chunks:
+
+```powershell
+# Clear filesystem storage (chunks, assets, uploads)
+Get-ChildItem data\assets -Recurse -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem data\uploads -Recurse -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Restart worker/API containers to reload from empty state
+docker compose -f infra/docker-compose.yml restart worker api
 ```
 
 Then re-ingest docs.
 
-### Full reset (containers + volumes + local artifacts)
+**Full reset (containers + DB volumes + filesystem storage)**
+
+⚠️ **REQUIRED after Phase 1 upgrade** (schema change: table → table_row)
 
 ```powershell
+# 1. Stop and remove containers + Docker volumes (PostgreSQL + Redis):
+docker compose -f infra/docker-compose.yml down -v
+
+# 2. Clean ALL local filesystem storage (critical! -v doesn't touch filesystem):
+Get-ChildItem data\assets -Recurse -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem data\uploads -Recurse -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem data\chunks -Recurse -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# 3. Restart fresh:
+docker compose -f infra/docker-compose.yml up --build -d
+
+# 4. VERIFY in admin console (wait 10s for startup):
+#    http://localhost:8501/admin → Should show "Ingested Docs: 0"
+```
+
+### Phase 1 Upgrade (Table & Diagram Fidelity)
+
+**⚠️ Breaking change to chunk schema:** Phase 1 replaces `content_type='table'` with `content_type='table_row'` and adds structured metadata (row_index, headers, units, bbox).
+
+**Do this after merging Phase 1:**
+
+```powershell
+# Full reset to clear incompatible chunks:
 docker compose -f infra/docker-compose.yml down -v
 Remove-Item -Recurse -Force data\assets\*
 Remove-Item -Recurse -Force data\uploads\*
+
+# Restart:
 docker compose -f infra/docker-compose.yml up --build -d
+
+# Re-ingest all manuals with Phase 1 support:
+python scripts/run_ingestion.py --doc-id siemens_g120_basic_positioner
+python scripts/run_ingestion.py --doc-id rockwell_powerflex_40
+python scripts/run_ingestion.py --doc-id timken_bearing_setting
+
+# Test retrieval with table queries:
+python scripts/run_retrieval.py --query "fault code table corrective" --doc-id siemens_g120_basic_positioner
 ```
+
+Expected improvements:
+- Table rows are now structured (headers, cells, units) instead of flat text
+- Figure regions have bounding boxes for precise citation
+- Better recall on spec table and fault code queries
 
 ## 8. Useful Health Checks
 

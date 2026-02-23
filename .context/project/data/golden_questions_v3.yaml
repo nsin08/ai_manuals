@@ -61,6 +61,10 @@ meta:
   docs:
     siemens_g120_basic_positioner: "SINAMICS G120 Basic Positioner Function Manual FW V4.6 (Siemens AG, 06/2013)"
     timken_bearing_setting: "Timken Tapered Roller Bearing Setting Techniques (Timken Company)"
+    rockwell_powerflex_40: "PowerFlex 40 AC Drive User Manual, Bulletin 22B (Rockwell Automation)"
+    grundfos_seg_manual: "Grundfos SEG Submersible Grinder Pump Installation and Operation Manual"
+    navfac_generator_manual: "NAVFAC Auxiliary Generators Operation & Maintenance Manual"
+    neets_module_4: "NEETS Module 4 — Introduction to Electrical Conductors, Wiring Techniques, and Schematic Reading"
 
 
 # ============================================================
@@ -814,7 +818,643 @@ questions:
 
 
 # ============================================================
-# TEST STRATEGY NOTES
+# ROCKWELL POWERFLEX 40 — 5 questions
+# Focus: product identification, installation safety, control
+#        I/O terminals, drive parameters, and fault/reset
+#        procedures.  All content anchored to the 22B-UM001
+#        user manual text and parameter tables.
+# ============================================================
+
+  # ─── EASY / RECALL ────────────────────────────────────────────────────────────
+
+  - id: ROC-A01
+    doc: rockwell_powerflex_40
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      The PowerFlex 40 user manual covers a specific family of Rockwell Automation
+      AC drives.  What is the Bulletin catalog number that identifies these drives,
+      and what operating voltage and frequency classes are included in the product
+      line described in this manual?
+    expected_keywords:
+      - "PowerFlex 40"
+      - "22B"
+      - "AC"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "22b"
+      - "powerflex"
+    hallucination_traps:
+      - "PowerFlex 700"
+      - "Bulletin 20B"
+      - "servo drive"
+
+  - id: ROC-A02
+    doc: rockwell_powerflex_40
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      The PowerFlex 40 manual specifies important safety precautions for
+      installation and maintenance.  Who does the manual define as qualified
+      personnel, and what precaution must be taken regarding hazardous voltage
+      before any maintenance work begins?
+    expected_keywords:
+      - "qualified"
+      - "installation"
+      - "hazardous"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "qualified"
+      - "installation"
+    hallucination_traps:
+      - "arc flash category 4"
+      - "lockout procedure NFPA 70E"
+      - "class 1 division 2"
+
+  # ─── MEDIUM / PARAMETER TABLE ─────────────────────────────────────────────────
+
+  - id: ROC-A03
+    doc: rockwell_powerflex_40
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "control terminal block I/O table"
+    question: >
+      Describe the control I/O terminals provided on the PowerFlex 40 drive.
+      List the available digital input and output terminals, their default
+      factory assignments, and the terminal numbers from the control terminal
+      block diagram or table as described in the manual.
+    expected_keywords:
+      - "terminal"
+      - "input"
+      - "output"
+      - "digital"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "terminal"
+      - "input"
+    hallucination_traps:
+      - "fiber optic"
+      - "PROFIBUS adapter"
+      - "STO terminal SIL 3"
+
+  - id: ROC-A04
+    doc: rockwell_powerflex_40
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "basic programming parameter table"
+    question: >
+      In the PowerFlex 40 parameter set, which parameters allow the engineer
+      to set the motor nameplate voltage, motor nameplate frequency, and the
+      drive output frequency limits?  Provide the parameter numbers and their
+      units as listed in the manual.
+    expected_keywords:
+      - "parameter"
+      - "motor"
+      - "frequency"
+      - "output"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "parameter"
+      - "motor"
+    hallucination_traps:
+      - "p2596"
+      - "r0840"
+      - "parameter 650"
+
+  # ─── HARD / TROUBLESHOOTING ───────────────────────────────────────────────────
+
+  - id: ROC-A05
+    doc: rockwell_powerflex_40
+    intent: troubleshooting
+    evidence: table
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: table
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "fault code table"
+    question: >
+      Turn 1: List the fault codes described in the PowerFlex 40 manual that
+        relate to drive overcurrent or output current conditions.  For each
+        fault code, state the fault name, probable cause, and recommended
+        corrective action as given in the manual.
+      Turn 2: Explain the procedure for resetting a fault on the PowerFlex 40
+        and identify any parameter that can be configured to enable an automatic
+        fault reset after a configurable time delay.
+    expected_keywords:
+      - "fault"
+      - "reset"
+      - "output"
+      - "current"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "fault"
+      - "reset"
+    hallucination_traps:
+      - "F07450"
+      - "p2596"
+      - "SINAMICS"
+
+
+# ============================================================
+# GRUNDFOS SEG MANUAL — 5 questions
+# Focus: product scope, installation requirements, technical
+#        data, maintenance schedule, and fault finding.
+#        Content anchored to the SEG-Manual-Grundfosliterature
+#        installation and operation document.
+# ============================================================
+
+  # ─── EASY / RECALL ────────────────────────────────────────────────────────────
+
+  - id: GRU-A01
+    doc: grundfos_seg_manual
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      The Grundfos SEG manual covers a specific type of submersible pump.
+      Describe the product type (application, pump design) and list the main
+      product variants covered in this installation and operation manual.
+    expected_keywords:
+      - "SEG"
+      - "Grundfos"
+      - "pump"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "seg"
+      - "grundfos"
+    hallucination_traps:
+      - "centrifugal irrigation pump"
+      - "CR booster pump"
+      - "SP borehole pump"
+
+  - id: GRU-A02
+    doc: grundfos_seg_manual
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      What safety and installation requirements does the Grundfos SEG manual
+      specify for handling, lifting, and submerging the pump?  Include any
+      specified depth limits, required pipe connections, or electrical
+      protection requirements stated in the manual.
+    expected_keywords:
+      - "installation"
+      - "motor"
+      - "electrical"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "installation"
+      - "motor"
+    hallucination_traps:
+      - "ATEX zone 1 classified"
+      - "pressurized vessel"
+      - "ISO class 1 clean room"
+
+  # ─── MEDIUM / TECHNICAL DATA ──────────────────────────────────────────────────
+
+  - id: GRU-A03
+    doc: grundfos_seg_manual
+    intent: spec
+    evidence: table
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: table
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "technical data / motor specifications table"
+    question: >
+      From the technical data section of the Grundfos SEG manual, identify
+      the available motor power ratings and supply voltage configurations
+      (single-phase and/or three-phase).  State the frequency and voltage
+      values listed in the specification table.
+    expected_keywords:
+      - "power"
+      - "voltage"
+      - "motor"
+      - "Hz"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "power"
+      - "voltage"
+    hallucination_traps:
+      - "6600 V medium voltage"
+      - "DC brushless motor"
+      - "permanent magnet"
+
+  - id: GRU-A04
+    doc: grundfos_seg_manual
+    intent: procedure
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "maintenance / service schedule"
+    question: >
+      Describe the maintenance requirements specified in the Grundfos SEG
+      manual.  Include any recommended service intervals for seals or
+      mechanical components, and list the checks that should be performed
+      during a routine inspection of the pump.
+    expected_keywords:
+      - "maintenance"
+      - "seal"
+      - "inspection"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "maintenance"
+      - "inspection"
+    hallucination_traps:
+      - "oil change every 3000 hours"
+      - "bearing replacement at 20,000 hours"
+      - "regreasing with NLGI grade 3"
+
+  # ─── HARD / TROUBLESHOOTING ───────────────────────────────────────────────────
+
+  - id: GRU-A05
+    doc: grundfos_seg_manual
+    intent: troubleshooting
+    evidence: text
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: text
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "fault finding / troubleshooting table"
+    question: >
+      Turn 1: Using the fault-finding section of the Grundfos SEG manual,
+        list the most common operational faults or symptoms and the probable
+        causes identified in the document.
+      Turn 2: For each fault, describe the corrective action or remedy
+        specified in the manual.  Focus on motor start failures and abnormal
+        noise or vibration during operation.
+    expected_keywords:
+      - "fault"
+      - "motor"
+      - "pump"
+      - "cause"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "fault"
+      - "motor"
+    hallucination_traps:
+      - "PTC thermistor replacement"
+      - "inverter frequency adjustment"
+      - "cable tray grounding"
+
+
+# ============================================================
+# NAVFAC GENERATOR MANUAL — 5 questions
+# Focus: scope of auxiliary generator maintenance, safety,
+#        fuel system, cooling system, and preventive
+#        maintenance schedule.
+# ============================================================
+
+  # ─── EASY / RECALL ────────────────────────────────────────────────────────────
+
+  - id: NAV-A01
+    doc: navfac_generator_manual
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      What type of equipment is covered by this NAVFAC manual, and what is
+      the stated purpose of the document?  Identify the equipment category
+      and any applicable generator prime mover type described in the scope
+      section.
+    expected_keywords:
+      - "generator"
+      - "diesel"
+      - "auxiliary"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "generator"
+      - "diesel"
+    hallucination_traps:
+      - "gas turbine"
+      - "nuclear plant"
+      - "steam generator"
+
+  - id: NAV-A02
+    doc: navfac_generator_manual
+    intent: safety
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      What safety precautions does the NAVFAC manual require maintenance
+      personnel to observe when working on or near auxiliary generators?
+      Include any lock-out/tag-out or electrical isolation requirements
+      specified in the document.
+    expected_keywords:
+      - "safety"
+      - "maintenance"
+      - "personnel"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "safety"
+      - "maintenance"
+    hallucination_traps:
+      - "radiological hazard"
+      - "class D fire extinguisher"
+      - "Category IV arc flash"
+
+  # ─── MEDIUM / SYSTEM REQUIREMENTS ────────────────────────────────────────────
+
+  - id: NAV-A03
+    doc: navfac_generator_manual
+    intent: procedure
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "fuel system maintenance section"
+    question: >
+      Describe the fuel system maintenance requirements for auxiliary diesel
+      generators as specified in the NAVFAC manual.  Include fuel filter
+      inspection/replacement intervals and any fuel quality or contamination
+      checks prescribed in the maintenance procedures.
+    expected_keywords:
+      - "fuel"
+      - "filter"
+      - "system"
+      - "maintenance"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "fuel"
+      - "filter"
+    hallucination_traps:
+      - "LPG conversion kit"
+      - "biodiesel B100"
+      - "gas chromatography test"
+
+  - id: NAV-A04
+    doc: navfac_generator_manual
+    intent: spec
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "cooling system section"
+    question: >
+      Describe the cooling system for auxiliary diesel generators as covered
+      in the NAVFAC manual.  What coolant type is specified, and what
+      operating temperature limits or inspection intervals are stated for
+      the cooling system components?
+    expected_keywords:
+      - "cooling"
+      - "coolant"
+      - "temperature"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "cooling"
+      - "temperature"
+    hallucination_traps:
+      - "seawater direct cooling"
+      - "nitrogen pressurized coolant circuit"
+      - "dry air cooling tower"
+
+  # ─── HARD / PREVENTIVE MAINTENANCE ───────────────────────────────────────────
+
+  - id: NAV-A05
+    doc: navfac_generator_manual
+    intent: procedure
+    evidence: text
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: text
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "preventive maintenance schedule table"
+    question: >
+      Turn 1: Using the preventive maintenance section of the NAVFAC manual,
+        list the scheduled inspection and maintenance tasks for auxiliary
+        generators.  Group them by interval (daily, weekly, monthly, annual)
+        if such a schedule is provided in the document.
+      Turn 2: Identify which of the listed tasks relate to lubrication and
+        oil system maintenance.  State the oil specification type or grade
+        and the change interval if given in the manual.
+    expected_keywords:
+      - "inspection"
+      - "maintenance"
+      - "oil"
+      - "schedule"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "inspection"
+      - "maintenance"
+    hallucination_traps:
+      - "ISO VG 32 turbine oil"
+      - "magnetic chip detector inspection"
+      - "borescope inspection"
+
+
+# ============================================================
+# NEETS MODULE 4 — 5 questions
+# Focus: transformer theory, rectifier circuits, filter
+#        circuits, power supply regulation, and AC/DC
+#        conversion fundamentals from the NEETS training series.
+# ============================================================
+
+  # ─── EASY / RECALL ────────────────────────────────────────────────────────────
+
+  - id: NEE-A01
+    doc: neets_module_4
+    intent: reference
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      What topics does NEETS Module 4 cover?  List the main subject areas
+      addressed in this training module, including any topics related to
+      transformers, power supplies, or AC/DC conversion described in the
+      learning objectives or table of contents.
+    expected_keywords:
+      - "transformer"
+      - "power supply"
+      - "rectifier"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "transformer"
+      - "power supply"
+    hallucination_traps:
+      - "radar"
+      - "communications"
+      - "cryptographic equipment"
+
+  - id: NEE-A02
+    doc: neets_module_4
+    intent: spec
+    evidence: text
+    question_type: straightforward
+    difficulty: easy
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: null
+    question: >
+      Explain the operating principle of a basic transformer as described in
+      NEETS Module 4.  What is the relationship between turns ratio, primary
+      voltage, and secondary voltage, and what is the significance of the
+      coefficient of coupling?
+    expected_keywords:
+      - "transformer"
+      - "primary"
+      - "secondary"
+      - "turns"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "primary"
+      - "secondary"
+    hallucination_traps:
+      - "three-phase delta-wye connection"
+      - "saturable-core reactor"
+      - "amorphous metal core"
+
+  # ─── MEDIUM / CIRCUITS ────────────────────────────────────────────────────────
+
+  - id: NEE-A03
+    doc: neets_module_4
+    intent: spec
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "rectifier circuit diagrams"
+    question: >
+      NEETS Module 4 describes several types of rectifier circuits.  Compare
+      the half-wave rectifier and the full-wave rectifier: explain how each
+      circuit operates, what type of diode configuration is used, and how
+      their output ripple frequency and average DC output voltage differ.
+    expected_keywords:
+      - "rectifier"
+      - "diode"
+      - "AC"
+      - "output"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "rectifier"
+      - "diode"
+    hallucination_traps:
+      - "SCR thyristor phase control"
+      - "synchronous rectifier"
+      - "Schottky barrier rectifier"
+
+  - id: NEE-A04
+    doc: neets_module_4
+    intent: spec
+    evidence: text
+    question_type: straightforward
+    difficulty: medium
+    rag_mode: text
+    turn_count: 1
+    anchor_page: null
+    anchor_artifact: "filter circuit section"
+    question: >
+      Describe the function and operation of the filter sections in a DC
+      power supply as explained in NEETS Module 4.  What is the purpose
+      of a filter capacitor and how does it reduce ripple voltage in the
+      output of a rectifier circuit?
+    expected_keywords:
+      - "filter"
+      - "capacitor"
+      - "ripple"
+      - "voltage"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "filter"
+      - "ripple"
+    hallucination_traps:
+      - "switched-mode resonant tank circuit"
+      - "LC ladder attenuator"
+      - "active PFC stage"
+
+  # ─── HARD / REGULATION ────────────────────────────────────────────────────────
+
+  - id: NEE-A05
+    doc: neets_module_4
+    intent: integration
+    evidence: text
+    question_type: multi_turn
+    difficulty: hard
+    rag_mode: text
+    turn_count: 2
+    anchor_page: null
+    anchor_artifact: "voltage regulator / power supply regulation section"
+    question: >
+      Turn 1: Explain the concept of voltage regulation as presented in NEETS
+        Module 4.  What does percent regulation mean, what causes poor
+        regulation in an unregulated power supply, and how is regulation
+        calculated from no-load and full-load voltage values?
+      Turn 2: Describe the types of voltage regulators discussed in NEETS
+        Module 4.  For each type (shunt and series, or any others covered),
+        explain the circuit topology and the mechanism by which output voltage
+        is stabilized against load and input changes.
+    expected_keywords:
+      - "regulator"
+      - "voltage"
+      - "output"
+      - "regulation"
+    min_keyword_hits: 2
+    expected_answer_contains:
+      - "regulator"
+      - "voltage"
+    hallucination_traps:
+      - "switching regulator buck-boost"
+      - "PWM control IC"
+      - "TL431 shunt regulator"
 # (Embedded here for co-location with the questions)
 # ============================================================
 test_strategy:

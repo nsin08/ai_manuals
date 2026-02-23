@@ -12,7 +12,7 @@ from packages.ports.chunk_store_port import ChunkStorePort
 from packages.ports.ocr_port import OcrPort
 from packages.ports.pdf_parser_port import ParsedPdfPage, PdfParserPort
 from packages.ports.reranker_port import RerankCandidate
-from packages.ports.table_extractor_port import ExtractedTable, TableExtractorPort
+from packages.ports.table_extractor_port import ExtractedTable, ExtractedTableRow, TableExtractorPort
 from packages.ports.vision_port import VisionPort
 
 
@@ -29,10 +29,15 @@ class FakeOcr(OcrPort):
 
 
 class FakeTables(TableExtractorPort):
-    def extract(self, page_text: str, page_number: int) -> list[ExtractedTable]:
+    def extract(self, page_text: str, page_number: int, doc_id: str = '') -> list[ExtractedTable]:
         _ = page_text
         if page_number == 1:
-            return [ExtractedTable(table_id='t1', page_number=1, text='fault cause remedy')]
+            row = ExtractedTableRow(
+                table_id='t1', page_number=1, row_index=0,
+                headers=[], row_cells=['fault', 'cause', 'remedy'],
+                units=['', '', ''], raw_text='fault cause remedy'
+            )
+            return [ExtractedTable(table_id='t1', page_number=1, rows=[row], raw_text='fault cause remedy')]
         return []
 
 
