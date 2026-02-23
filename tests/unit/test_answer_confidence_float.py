@@ -39,7 +39,15 @@ def _make_chunk(chunk_id: str, content: str, doc_id: str = "d1") -> Chunk:
     )
 
 
-def _make_evidence_output(coverage: float, snippets: list[str] | None = None) -> SearchEvidenceOutput:
+def _make_evidence_output(
+    coverage: float,
+    snippets: list[str] | None = None,
+    *,
+    intent: str = "general",
+    score: float = 0.8,
+    keyword_score: float = 0.8,
+    vector_score: float = 0.8,
+) -> SearchEvidenceOutput:
     """Helper to build a controlled SearchEvidenceOutput for monkeypatching."""
     hits: list[EvidenceHit] = []
     for i, snippet in enumerate(snippets or []):
@@ -53,15 +61,15 @@ def _make_evidence_output(coverage: float, snippets: list[str] | None = None) ->
                 section_path=None,
                 figure_id=None,
                 table_id=None,
-                score=0.8,
-                keyword_score=0.8,
-                vector_score=0.8,
+                score=score,
+                keyword_score=keyword_score,
+                vector_score=vector_score,
                 snippet=snippet,
             )
         )
     return SearchEvidenceOutput(
         query="test query",
-        intent="general",
+        intent=intent,
         total_chunks_scanned=10,
         hits=hits,
         coverage_score=coverage,
@@ -171,3 +179,52 @@ def test_confidence_maps_coverage_directly(monkeypatch) -> None:
     )
 
     assert output.confidence == round(target_coverage, 4)
+
+
+def test_no_abstain_for_table_intent_at_0_40_coverage(monkeypatch) -> None:
+    """Table intent uses a lower threshold to avoid over-abstaining sparse lookups."""
+
+    def _stub_search(*args, **kwargs):
+        return _make_evidence_output(
+            coverage=0.40,
+            intent="table",
+            snippets=["parameter p2600 target position", "parameter p2601 velocity setting"],
+        )
+
+    monkeypatch.setattr(answer_question_module, "search_evidence_use_case", _stub_search)
+
+    output = answer_question_use_case(
+        AnswerQuestionInput(query="MDI target position and velocity parameter", doc_id="d1"),
+        chunk_query=_InMemoryChunkQuery([_make_chunk("c1", "p2600 p2601 table data")]),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+    )
+
+    assert output.abstain is False
+    assert output.status == "ok"
+
+
+def test_general_intent_rescue_with_grounded_strong_retrieval(monkeypatch) -> None:
+    """General intent may bypass abstain when coverage is moderate but evidence is strong."""
+
+    def _stub_search(*args, **kwargs):
+        return _make_evidence_output(
+            coverage=0.30,
+            intent="general",
+            score=0.62,
+            keyword_score=0.61,
+            vector_score=0.72,
+            snippets=["warning notice categories include danger warning caution notice"],
+        )
+
+    monkeypatch.setattr(answer_question_module, "search_evidence_use_case", _stub_search)
+
+    output = answer_question_use_case(
+        AnswerQuestionInput(query="warning notice categories in ascending danger order", doc_id="d1"),
+        chunk_query=_InMemoryChunkQuery([_make_chunk("c1", "danger warning caution notice")]),
+        keyword_search=SimpleKeywordSearchAdapter(),
+        vector_search=HashVectorSearchAdapter(),
+    )
+
+    assert output.abstain is False
+    assert output.status == "ok"

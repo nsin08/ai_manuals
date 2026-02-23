@@ -525,7 +525,15 @@ def _build_answer_output(
     if not answer_text:
         answer_text = _compose_answer_text(hits)
 
-    abstain = not has_sufficient_evidence(coverage_score)
+    best_hit_score = max((h.score for h in hits), default=0.0)
+    best_keyword_score = max((h.keyword_score for h in hits), default=0.0)
+    abstain = not has_sufficient_evidence(
+        coverage=coverage_score,
+        intent=intent,
+        has_citations=bool(citations),
+        best_hit_score=best_hit_score,
+        best_keyword_score=best_keyword_score,
+    )
     if abstain:
         status = 'not_found'
         answer_text = _compose_related_evidence_text(hits)
