@@ -39,7 +39,7 @@ jobs:
         run: |
           python scripts/run_regression_gates.py \
             --golden-path .context/project/data/golden_questions_v3.yaml \
-            --doc-id rockwell_powerflex_40 \
+            --doc-id siemens_g120_basic_positioner \
             --limit 5 \
             --top-n 6 \
             --min-pass-rate 80 \
